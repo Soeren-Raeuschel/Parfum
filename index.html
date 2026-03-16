@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+
+<html lang="de">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <meta name="apple-mobile-web-app-title" content="Parfum"/>
+  <meta name="theme-color" content="#0C0C12"/>
+  <title>Parfum Advisor</title>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;1,400&family=Jost:wght@300;400;500&display=swap" rel="stylesheet"/>
+  <style>
+    :root {
+      --bg:#0C0C12; --surf:#14141E; --surf2:#1C1C2A; --bord:#252535;
+      --txt:#F0EDE8; --mut:#6B6878; --gold:#C9A96E; --goldl:#E8CFA0;
+      --goldd:rgba(201,169,110,.13); --blue:#8AB4D4; --blued:rgba(138,180,212,.13);
+      --red:#C96E6E;
+    }
+    * { box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent; }
+    html,body { height:100%; background:var(--bg); font-family:'Jost',sans-serif; color:var(--txt); -webkit-font-smoothing:antialiased; overscroll-behavior:none; }
+    input,button,textarea { font-family:'Jost',sans-serif; }
+    ::-webkit-scrollbar { display:none; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+    @keyframes up { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
+
+```
+#wrap { max-width:430px; margin:0 auto; min-height:100vh; padding-bottom:85px; }
+
+/* NAV */
+#nav {
+  position:fixed; bottom:0; left:50%; transform:translateX(-50%);
+  width:100%; max-width:430px;
+  background:rgba(12,12,18,.96); backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px);
+  border-top:1px solid var(--bord);
+  display:flex; align-items:center; justify-content:space-around;
+  padding:8px 16px calc(8px + env(safe-area-inset-bottom,0px));
+  z-index:999;
+}
+.nb { background:none; border:none; cursor:pointer; display:flex; flex-direction:column; align-items:center; gap:2px; padding:4px 14px; opacity:.35; }
+.nb.on { opacity:1; }
+.nb-icon { font-size:20px; }
+.nb-lbl { font-size:10px; font-weight:500; color:var(--gold); letter-spacing:.06em; text-transform:uppercase; }
+.nadd { background:var(--gold); border:none; border-radius:14px; width:50px; height:50px; font-size:24px; cursor:pointer; color:var(--bg); display:flex; align-items:center; justify-content:center; box-shadow:0 4px 18px rgba(201,169,110,.4); }
+
+/* PAGE */
+.page { padding:calc(env(safe-area-inset-top,20px) + 30px) 20px 16px; }
+.eyebrow { font-size:11px; letter-spacing:.13em; text-transform:uppercase; color:var(--gold); margin-bottom:4px; }
+h1 { font-family:'Playfair Display',serif; font-size:30px; font-weight:400; line-height:1.2; margin-bottom:24px; }
+.back { background:none; border:none; color:var(--txt); font-size:22px; cursor:pointer; padding:0; margin-bottom:14px; display:block; }
+
+/* CARD */
+.card { background:var(--surf); border:1px solid var(--bord); border-radius:16px; padding:16px; margin-bottom:12px; }
+.lbl { font-size:11px; font-weight:500; color:var(--mut); letter-spacing:.09em; text-transform:uppercase; margin-bottom:8px; }
+
+/* INPUT */
+.inp { width:100%; background:var(--surf2); border:1px solid var(--bord); border-radius:12px; padding:13px 15px; font-size:15px; color:var(--txt); outline:none; -webkit-appearance:none; }
+.inp:focus { border-color:var(--gold); }
+.inp::placeholder { color:var(--mut); }
+
+/* BUTTONS */
+.btn { width:100%; background:var(--gold); color:var(--bg); border:none; border-radius:13px; padding:15px; font-size:15px; font-weight:500; cursor:pointer; margin-top:4px; }
+.btn:disabled { opacity:.4; cursor:default; }
+.btn-out { background:none; border:1px solid var(--bord); color:var(--txt); border-radius:12px; padding:11px 18px; font-size:13px; cursor:pointer; font-family:inherit; }
+.btn-red { background:none; border:1px solid rgba(201,110,110,.3); color:var(--red); border-radius:12px; padding:11px 18px; font-size:13px; cursor:pointer; font-family:inherit; width:100%; margin-top:8px; }
+
+/* BADGE */
+.badge { font-size:10px; padding:3px 8px; border-radius:6px; font-weight:500; letter-spacing:.05em; text-transform:uppercase; }
+.bo { background:var(--goldd); color:var(--gold); }
+.bs { background:var(--blued); color:var(--blue); }
+
+/* NOTE TAG */
+.nt { font-size:11px; padding:4px 10px; border-radius:20px; background:var(--surf2); border:1px solid var(--bord); color:var(--mut); display:inline-block; margin:3px; }
+
+/* PERFUME ROW */
+.prow { background:var(--surf); border:1px solid var(--bord); border-radius:14px; padding:13px 15px; display:flex; align-items:center; gap:12px; margin-bottom:8px; cursor:pointer; }
+.prow-icon { font-size:26px; width:38px; text-align:center; flex-shrink:0; }
+.prow-inf { flex:1; min-width:0; }
+.prow-brand { font-size:10px; color:var(--gold); letter-spacing:.08em; text-transform:uppercase; }
+.prow-name { font-family:'Playfair Display',serif; font-size:15px; margin:1px 0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.prow-dir { font-size:12px; color:var(--mut); }
+
+/* Q OPTION */
+.qo { background:var(--surf2); border:1.5px solid var(--bord); border-radius:12px; padding:11px 8px; text-align:center; cursor:pointer; }
+.qo.sel { background:var(--goldd); border-color:var(--gold); }
+.qo-i { font-size:20px; display:block; margin-bottom:3px; }
+.qo-l { font-size:12px; }
+.qo.sel .qo-l { color:var(--gold); }
+
+/* REC CARD */
+.rec { background:linear-gradient(135deg,#1a1520,#0f1a1f); border:1px solid rgba(201,169,110,.3); border-radius:20px; padding:24px 20px; position:relative; overflow:hidden; animation:up .3s ease; }
+.rec::before { content:''; position:absolute; top:-30px; right:-30px; width:140px; height:140px; background:radial-gradient(circle,rgba(201,169,110,.07),transparent 70%); border-radius:50%; }
+
+/* TABS */
+.tabs { display:flex; background:var(--surf); border-radius:12px; padding:3px; margin-bottom:18px; }
+.tab { flex:1; background:none; border:1px solid transparent; border-radius:9px; padding:9px; font-size:13px; color:var(--mut); cursor:pointer; font-family:inherit; }
+.tab.on { background:var(--surf2); border-color:var(--bord); color:var(--txt); font-weight:500; }
+
+/* SPINNER */
+.spin { display:flex; align-items:center; justify-content:center; gap:10px; padding:20px; color:var(--mut); font-size:14px; }
+.sp { width:18px; height:18px; border:2px solid var(--bord); border-top-color:var(--gold); border-radius:50%; animation:spin .8s linear infinite; flex-shrink:0; }
+
+/* FILTERS */
+.filters { display:flex; gap:6px; overflow-x:auto; margin-bottom:16px; }
+.ft { white-space:nowrap; font-size:12px; padding:5px 13px; border-radius:20px; border:1px solid var(--bord); background:none; color:var(--mut); cursor:pointer; font-family:inherit; }
+.ft.on { background:var(--goldd); border-color:var(--gold); color:var(--gold); }
+
+/* STATUS BOX */
+.status-ok { background:rgba(201,169,110,.08); border:1px solid rgba(201,169,110,.25); border-radius:12px; padding:12px 15px; font-size:13px; color:var(--gold); margin-bottom:12px; }
+.status-err { background:rgba(201,110,110,.08); border:1px solid rgba(201,110,110,.25); border-radius:12px; padding:12px 15px; font-size:13px; color:var(--red); margin-bottom:12px; }
+
+/* STATS */
+.stats { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:16px; }
+.stat { background:var(--surf); border:1px solid var(--bord); border-radius:14px; padding:14px; }
+.stat-n { font-family:'Playfair Display',serif; font-size:28px; }
+.stat-l { font-size:12px; color:var(--mut); margin-top:2px; }
+```
+
+  </style>
+</head>
+<body>
+<div id="wrap"><div id="view"></div></div>
+<nav id="nav">
+  <button class="nb" id="n-home" onclick="nav('home')"><span class="nb-icon">✦</span><span class="nb-lbl">Heute</span></button>
+  <button class="nadd" onclick="nav('add')">＋</button>
+  <button class="nb" id="n-coll" onclick="nav('coll')"><span class="nb-icon">🫙</span><span class="nb-lbl">Sammlung</span></button>
+  <button class="nb" id="n-settings" onclick="nav('settings')"><span class="nb-icon">⚙️</span><span class="nb-lbl">Key</span></button>
+</nav>
+
+<script>
+// ── helpers ──────────────────────────────────────────────
+function $(id){return document.getElementById(id);}
+function el(tag,cls,html){const e=document.createElement(tag);if(cls)e.className=cls;if(html!==undefined)e.innerHTML=html;return e;}
+function div(cls,html){return el('div',cls,html);}
+function p(cls,txt){const e=el('p',cls);e.textContent=txt;return e;}
+function btn(cls,txt,fn){const b=el('button',cls,txt);b.onclick=fn;return b;}
+function inp(cls,id,ph,type='text'){const i=el('input',cls);i.id=id;i.placeholder=ph;i.type=type;return i;}
+function lstore(k,d){try{return JSON.parse(localStorage.getItem(k))??d;}catch{return d;}}
+function sstore(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch{}}
+function today(){return new Date().toISOString().split('T')[0];}
+function greeting(){const h=new Date().getHours();return h<12?'Morgen':h<18?'Tag':'Abend';}
+function daysSince(d){if(!d)return null;return Math.floor((Date.now()-new Date(d+'T00:00:00').getTime())/86400000);}
+function spinner(msg){const w=div('spin');w.appendChild(div('sp'));w.appendChild(document.createTextNode(msg||'Lädt…'));return w;}
+
+// ── state ────────────────────────────────────────────────
+const ST = {
+  view: 'home',
+  perfumes: lstore('pf_v2', []),
+  sel: null,
+  rec: null,
+  ans: {},
+  loading: false,
+  filter: 'all',
+  addTab: 'link',
+  addType: 'owned',
+  confirmDel: false,
+  importUrl: '',
+  apiKey: lstore('pf_key', ''),
+};
+function save(){sstore('pf_v2', ST.perfumes);}
+
+// ── Claude API ───────────────────────────────────────────
+async function callClaude(userMsg, useSearch, maxTok) {
+  if (!ST.apiKey) throw new Error('Kein API Key – bitte in ⚙️ eintragen');
+  const body = {
+    model: 'claude-sonnet-4-20250514',
+    max_tokens: maxTok || 800,
+    messages: [{role:'user', content: userMsg}]
+  };
+  if (useSearch) body.tools = [{type:'web_search_20250305', name:'web_search'}];
+  
+  const r = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': ST.apiKey,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true'
+    },
+    body: JSON.stringify(body)
+  });
+  const d = await r.json();
+  if (d.error) throw new Error(d.error.message);
+  return (d.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('');
+}
+
+function parseJSON(text) {
+  // Find largest valid JSON object with brand+name
+  let depth=0, start=-1, best='';
+  for (let i=0; i<text.length; i++) {
+    if (text[i]==='{') { if(depth===0) start=i; depth++; }
+    else if (text[i]==='}') {
+      depth--;
+      if (depth===0 && start>=0) {
+        const s = text.slice(start, i+1);
+        if (s.length > best.length) best = s;
+      }
+    }
+  }
+  if (!best) throw new Error('Keine JSON-Daten in Antwort');
+  const parsed = JSON.parse(best);
+  return parsed;
+}
+
+async function importPerfume(url) {
+  const text = await callClaude(
+    `Fetch this Parfumo URL: ${url}
+
+Extract the perfume data and return ONLY a JSON object (no markdown, no text around it):
+{"brand":"exact brand name","name":"exact perfume name","direction":["e.g. Süß","Holzig"],"top_notes":["note1","note2"],"heart_notes":["note1"],"base_notes":["note1","note2"],"longevity":"überdurchschnittlich","sillage":"stark","rating":8.9}`,
+    true, 1000
+  );
+  const d = parseJSON(text);
+  if (!d.brand || !d.name) throw new Error('Parfum nicht erkannt – bitte manuell eingeben');
+  return d;
+}
+
+async function getRecommendation() {
+  const list = ST.perfumes.map(p => {
+    const ds = daysSince(p.lastWorn);
+    const notes = [...(p.top_notes||[]),...(p.heart_notes||[]),...(p.base_notes||[])].slice(0,4).join(',');
+    return `${p.brand} – ${p.name} [${p.type==='owned'?'Eigen':'Probe'}] | ${(p.direction||[]).join(',')} | ${notes} | ${ds===null?'nie':ds+'d ago'}`;
+  }).join('\n');
+  const a = ST.ans;
+  const text = await callClaude(
+    `Du bist Parfum-Sommelier. Wähle das BESTE Parfum aus der Sammlung.
+
+SAMMLUNG:
+${list}
+
+HEUTE: Anlass=${a.occasion}, Wetter=${a.weather}, Stimmung=${a.mood}, Zeit=${a.time}
+
+Bevorzuge selten oder nie getragene Parfums. Antworte NUR als JSON:
+{"brand":"...","name":"...","reason":"2-3 Sätze warum heute perfekt","vibe":"Ein Wort"}`,
+    false, 400
+  );
+  return parseJSON(text);
+}
+
+// ── navigation ───────────────────────────────────────────
+function nav(v) {
+  ST.view = v;
+  ST.confirmDel = false;
+  render();
+}
+
+function render() {
+  const view = $('view');
+  view.innerHTML = '';
+  // nav highlight
+  ['home','coll','settings'].forEach(id => {
+    const b = $('n-'+id);
+    if (b) b.classList.toggle('on', ST.view===id || (id==='coll' && ST.view==='detail'));
+  });
+  if (ST.view==='home')     view.appendChild(pageHome());
+  if (ST.view==='coll')     view.appendChild(pageColl());
+  if (ST.view==='detail')   view.appendChild(pageDetail());
+  if (ST.view==='add')      view.appendChild(pageAdd());
+  if (ST.view==='settings') view.appendChild(pageSettings());
+}
+
+// ── HOME ─────────────────────────────────────────────────
+function pageHome() {
+  const wrap = div('page');
+  wrap.appendChild(p('eyebrow', new Date().toLocaleDateString('de-DE',{weekday:'long',day:'numeric',month:'long'})));
+  const h = el('h1');
+  h.innerHTML = `Guten ${greeting()}, <em>Sören</em> 🖤`;
+  wrap.appendChild(h);
+
+  if (!ST.perfumes.length) {
+    wrap.appendChild(emptyState('🪬','Noch leer','Füge dein erstes Parfum über\nden ＋ Button hinzu.', null));
+    return wrap;
+  }
+
+  if (!ST.apiKey) {
+    const warn = div('status-err', '⚠️ Kein API Key gesetzt – bitte in ⚙️ Key eintragen um Empfehlungen zu erhalten.');
+    wrap.appendChild(warn);
+  }
+
+  if (ST.rec) {
+    wrap.appendChild(recCard());
+  } else {
+    wrap.appendChild(questionsBlock());
+  }
+
+  // today worn
+  const worn = ST.perfumes.filter(p=>p.lastWorn===today());
+  if (worn.length) {
+    wrap.appendChild(p('lbl', 'Heute getragen'));
+    worn.forEach(p => wrap.appendChild(perfumeRow(p, false)));
+  }
+
+  // stats
+  const stats = div('stats');
+  [{l:'Eigene', v:ST.perfumes.filter(p=>p.type==='owned').length, c:'var(--gold)'},
+   {l:'Abfüllungen', v:ST.perfumes.filter(p=>p.type==='sample').length, c:'var(--blue)'}].forEach(s=>{
+    const b = div('stat');
+    b.innerHTML = `<div class="stat-n" style="color:${s.c}">${s.v}</div><div class="stat-l">${s.l}</div>`;
+    stats.appendChild(b);
+  });
+  wrap.appendChild(stats);
+  return wrap;
+}
+
+function questionsBlock() {
+  const QQ = [
+    {k:'occasion', l:'Anlass', o:[{v:'Alltag',i:'🛍️'},{v:'Arbeit',i:'💼'},{v:'Date',i:'🌹'},{v:'Abend',i:'🥂'}]},
+    {k:'weather',  l:'Wetter', o:[{v:'Warm',i:'☀️'},{v:'Frisch',i:'🌤️'},{v:'Kalt',i:'❄️'},{v:'Bewölkt',i:'☁️'}]},
+    {k:'mood',     l:'Stimmung', o:[{v:'Energetisch',i:'⚡'},{v:'Entspannt',i:'😌'},{v:'Verführerisch',i:'🔥'},{v:'Frisch',i:'🌿'}]},
+    {k:'time',     l:'Tageszeit', o:[{v:'Morgens',i:'🌅'},{v:'Mittags',i:'🌞'},{v:'Abends',i:'🌆'},{v:'Nachts',i:'🌙'}]},
+  ];
+  const wrap = div('');
+  QQ.forEach(q => {
+    wrap.appendChild(p('lbl', q.l));
+    const grid = div('');
+    grid.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px';
+    q.o.forEach(o => {
+      const d = div('qo' + (ST.ans[q.k]===o.v?' sel':''));
+      d.innerHTML = `<span class="qo-i">${o.i}</span><span class="qo-l">${o.v}</span>`;
+      d.onclick = () => { ST.ans[q.k]=o.v; render(); };
+      grid.appendChild(d);
+    });
+    wrap.appendChild(grid);
+  });
+
+  const done = QQ.every(q=>ST.ans[q.k]);
+  if (ST.loading) {
+    wrap.appendChild(spinner('Empfehlung lädt…'));
+  } else {
+    const b = btn('btn', '✨ Empfehlung erhalten', async () => {
+      ST.loading=true; render();
+      try { ST.rec = await getRecommendation(); }
+      catch(e) { alert('Fehler: ' + e.message); }
+      ST.loading=false; render();
+    });
+    if (!done) b.disabled = true;
+    wrap.appendChild(b);
+  }
+  return wrap;
+}
+
+function recCard() {
+  const r = ST.rec;
+  const pf = ST.perfumes.find(x =>
+    x.name?.toLowerCase().includes(r.name?.toLowerCase()) ||
+    r.name?.toLowerCase().includes(x.name?.toLowerCase())
+  );
+  const wornToday = pf?.lastWorn === today();
+  const notes = [...(pf?.top_notes||[]),...(pf?.heart_notes||[]),...(pf?.base_notes||[])];
+
+  const card = div('rec');
+  card.innerHTML = `
+    <div style="font-size:11px;color:var(--gold);letter-spacing:.14em;text-transform:uppercase;margin-bottom:3px">${r.brand||pf?.brand||''}</div>
+    <div style="font-family:'Playfair Display',serif;font-size:26px;font-weight:400;line-height:1.2;margin-bottom:10px">${r.name||pf?.name||''}</div>
+    <div style="display:flex;gap:7px;margin-bottom:12px">
+      ${pf?`<span class="badge ${pf.type==='owned'?'bo':'bs'}">${pf.type==='owned'?'Eigenes':'Abfüllung'}</span>`:''}
+      ${r.vibe?`<span class="badge" style="background:rgba(201,169,110,.08);color:var(--goldl)">${r.vibe}</span>`:''}
+    </div>
+    <div style="height:1px;background:var(--bord);margin:12px 0"></div>
+    <div style="font-size:14px;line-height:1.75;opacity:.85;margin-bottom:${notes.length?'14px':'0'}">${r.reason}</div>
+    ${notes.length?`<div>${notes.slice(0,6).map(n=>`<span class="nt">${n}</span>`).join('')}</div>`:''}
+  `;
+  const row = div('');
+  row.style.cssText = 'display:flex;gap:8px;margin-top:18px';
+
+  const wb = btn('btn', wornToday?'✓ Heute getragen':'🫧 Als getragen markieren', () => {
+    if (pf) {
+      ST.perfumes = ST.perfumes.map(x=>x.id===pf.id?{...x,lastWorn:today()}:x);
+      save(); render();
+    }
+  });
+  wb.style.flex='1';
+  if (wornToday) wb.disabled=true;
+
+  const rb = btn('btn-out','↺', () => { ST.rec=null; ST.ans={}; render(); });
+  row.append(wb, rb);
+  card.appendChild(row);
+  return card;
+}
+
+// ── COLLECTION ───────────────────────────────────────────
+function pageColl() {
+  const wrap = div('page');
+  wrap.appendChild(p('eyebrow','Meine Sammlung'));
+  const h = el('h1');
+  h.innerHTML = `${ST.perfumes.length} <em>Parfums</em>`;
+  wrap.appendChild(h);
+
+  const filters = div('filters');
+  [['all','Alle'],['owned','Eigene'],['sample','Abfüllungen']].forEach(([v,l])=>{
+    const b = btn('ft'+(ST.filter===v?' on':''), l, ()=>{ ST.filter=v; render(); });
+    filters.appendChild(b);
+  });
+  wrap.appendChild(filters);
+
+  let list = ST.perfumes;
+  if (ST.filter==='owned') list=list.filter(p=>p.type==='owned');
+  if (ST.filter==='sample') list=list.filter(p=>p.type==='sample');
+
+  if (!list.length) {
+    wrap.appendChild(emptyState('🪬','Noch leer','Füge dein erstes Parfum hinzu.', ()=>nav('add')));
+  } else {
+    list.forEach(pf => wrap.appendChild(perfumeRow(pf, true)));
+  }
+  return wrap;
+}
+
+// ── DETAIL ───────────────────────────────────────────────
+function pageDetail() {
+  const pf = ST.perfumes.find(x=>x.id===ST.sel);
+  if (!pf) { nav('coll'); return div(''); }
+  const wornToday = pf.lastWorn===today();
+  const notes = [...(pf.top_notes||[]),...(pf.heart_notes||[]),...(pf.base_notes||[])];
+
+  const wrap = div('');
+  const header = div('');
+  header.style.cssText = 'background:linear-gradient(180deg,#1a1520,var(--bg));padding:calc(env(safe-area-inset-top,20px)+30px) 20px 24px;border-bottom:1px solid var(--bord)';
+  const bk = btn('back','←', ()=>{ ST.sel=null; nav('coll'); });
+  header.append(bk);
+  header.innerHTML += `<div style="font-size:48px;margin-bottom:10px">${pf.type==='owned'?'🫙':'💊'}</div>
+    <div class="eyebrow">${pf.brand||''}</div>
+    <div style="font-family:'Playfair Display',serif;font-size:30px;font-weight:400;margin-bottom:8px">${pf.name||''}</div>
+    <span class="badge ${pf.type==='owned'?'bo':'bs'}">${pf.type==='owned'?'Eigenes':'Abfüllung'}</span>`;
+  wrap.appendChild(header);
+
+  const body = div('');
+  body.style.cssText = 'padding:18px 20px;display:flex;flex-direction:column;gap:10px';
+
+  if (pf.direction?.length) {
+    const c = div('card');
+    c.appendChild(p('lbl','Duftcharakter'));
+    const tags = div('');
+    pf.direction.forEach(d=>tags.appendChild(el('span','nt',d)));
+    c.appendChild(tags);
+    body.appendChild(c);
+  }
+
+  if (notes.length) {
+    const c = div('card');
+    c.appendChild(p('lbl','Duftpyramide'));
+    [['Kopfnote',pf.top_notes],['Herznote',pf.heart_notes],['Basisnote',pf.base_notes]].forEach(([l,ns])=>{
+      if (!ns?.length) return;
+      const s = div(''); s.style.marginBottom='10px';
+      s.innerHTML=`<div style="font-size:10px;color:var(--mut);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">${l}</div>`;
+      ns.forEach(n=>s.appendChild(el('span','nt',n)));
+      c.appendChild(s);
+    });
+    body.appendChild(c);
+  }
+
+  const pc = div('card');
+  pc.appendChild(p('lbl','Eigenschaften'));
+  const grid = div('');
+  grid.style.cssText='display:grid;grid-template-columns:1fr 1fr;gap:8px';
+  [{l:'Haltbarkeit',v:pf.longevity||'–'},{l:'Sillage',v:pf.sillage||'–'},{l:'Bewertung',v:pf.rating?`${pf.rating}/10`:'–'},{l:'Zuletzt',v:pf.lastWorn||'Nie'}].forEach(i=>{
+    const b = div('');
+    b.style.cssText='background:var(--surf2);border-radius:10px;padding:10px';
+    b.innerHTML=`<div style="font-size:10px;color:var(--mut);text-transform:uppercase;letter-spacing:.07em">${i.l}</div><div style="font-size:14px;font-weight:500;margin-top:2px">${i.v}</div>`;
+    grid.appendChild(b);
+  });
+  pc.appendChild(grid);
+  body.appendChild(pc);
+
+  const row = div(''); row.style.cssText='display:flex;gap:8px';
+  const wb = btn('btn', wornToday?'✓ Heute getragen':'🫧 Als getragen markieren', ()=>{
+    ST.perfumes=ST.perfumes.map(x=>x.id===pf.id?{...x,lastWorn:today()}:x); save(); render();
+  });
+  wb.style.flex='1'; if(wornToday) wb.disabled=true;
+  const db = btn('btn-out','🗑️', ()=>{ ST.confirmDel=true; render(); });
+  row.append(wb, db);
+  body.appendChild(row);
+
+  if (ST.confirmDel) {
+    const cd = div('');
+    cd.style.cssText='background:rgba(201,110,110,.07);border:1px solid rgba(201,110,110,.2);border-radius:12px;padding:14px';
+    cd.appendChild(p('','Wirklich löschen?')).style.cssText='font-size:14px;text-align:center;margin-bottom:10px';
+    const cr = div(''); cr.style.cssText='display:flex;gap:8px';
+    cr.append(
+      btn('btn-out','Abbrechen', ()=>{ ST.confirmDel=false; render(); }),
+      btn('btn','Löschen', ()=>{ ST.perfumes=ST.perfumes.filter(x=>x.id!==pf.id); save(); ST.sel=null; ST.confirmDel=false; nav('coll'); })
+    );
+    cr.querySelector('.btn').style.cssText='background:var(--red);color:#fff;border:none;border-radius:12px;padding:11px 18px;font-size:13px;cursor:pointer;font-family:inherit;flex:1';
+    cd.appendChild(cr);
+    body.appendChild(cd);
+  }
+
+  wrap.appendChild(body);
+  return wrap;
+}
+
+// ── ADD ──────────────────────────────────────────────────
+function pageAdd() {
+  const wrap = div('page');
+  wrap.appendChild(btn('back','←', ()=>nav('coll')));
+  wrap.appendChild(p('eyebrow','Sammlung'));
+  const h = el('h1'); h.innerHTML='Neues <em>Parfum</em>'; wrap.appendChild(h);
+
+  const tabs = div('tabs');
+  [['link','✨ Parfumo Link'],['manual','✏️ Manuell']].forEach(([v,l])=>{
+    const t = btn('tab'+(ST.addTab===v?' on':''), l, ()=>{ ST.addTab=v; render(); });
+    tabs.appendChild(t);
+  });
+  wrap.appendChild(tabs);
+
+  function typePicker(marginB) {
+    const g = div('');
+    g.style.cssText=`display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:${marginB||'14px'}`;
+    [['owned','🫙','Eigenes'],['sample','💊','Abfüllung']].forEach(([v,i,l])=>{
+      const d = div('qo'+(ST.addType===v?' sel':''));
+      d.innerHTML=`<span class="qo-i">${i}</span><span class="qo-l">${l}</span>`;
+      d.onclick=()=>{ ST.addType=v; render(); };
+      g.appendChild(d);
+    });
+    return g;
+  }
+
+  if (ST.addTab==='link') {
+    const info = div('');
+    info.style.cssText='background:linear-gradient(135deg,#1a1520,#0f1a1f);border:1px solid rgba(201,169,110,.2);border-radius:14px;padding:13px 15px;font-size:13px;color:var(--mut);line-height:1.65;margin-bottom:14px';
+    info.textContent='Füge einen Parfumo-Link ein — Noten, Haltbarkeit und Bewertung werden automatisch importiert.';
+    wrap.appendChild(info);
+    wrap.appendChild(p('lbl','Parfumo Link'));
+    const urlInp = inp('inp','imp-url','https://www.parfumo.de/Parfums/…');
+    urlInp.value = ST.importUrl||'';
+    urlInp.oninput = e => ST.importUrl = e.target.value;
+    urlInp.style.marginBottom='14px';
+    wrap.appendChild(urlInp);
+    wrap.appendChild(p('lbl','Typ'));
+    wrap.appendChild(typePicker());
+
+    if (ST.loading) {
+      wrap.appendChild(spinner('Importiere…'));
+    } else {
+      wrap.appendChild(btn('btn','Importieren', async ()=>{
+        const url = (ST.importUrl||'').trim();
+        if (!url) return alert('Bitte einen Parfumo-Link eingeben');
+        if (!ST.apiKey) return alert('Kein API Key – bitte in ⚙️ Key eintragen');
+        ST.loading=true; render();
+        try {
+          const d = await importPerfume(url);
+          ST.perfumes = [...ST.perfumes, {id:Date.now()+'', type:ST.addType, url, ...d}];
+          save(); ST.importUrl=''; ST.loading=false; nav('coll');
+        } catch(e) {
+          alert('Import fehlgeschlagen: '+e.message);
+          ST.loading=false; render();
+        }
+      }));
+    }
+  } else {
+    wrap.appendChild(p('lbl','Marke'));
+    const bi = inp('inp','m-brand','z.B. Xerjoff'); bi.style.marginBottom='12px'; wrap.appendChild(bi);
+    wrap.appendChild(p('lbl','Name'));
+    const ni = inp('inp','m-name','z.B. Naxos'); ni.style.marginBottom='12px'; wrap.appendChild(ni);
+    wrap.appendChild(p('lbl','Typ'));
+    wrap.appendChild(typePicker());
+    wrap.appendChild(btn('btn','Hinzufügen', ()=>{
+      const brand = $('m-brand')?.value?.trim();
+      const name  = $('m-name')?.value?.trim();
+      if (!brand||!name) return alert('Bitte Marke und Name eingeben');
+      ST.perfumes=[...ST.perfumes,{id:Date.now()+'',brand,name,type:ST.addType}];
+      save(); nav('coll');
+    }));
+  }
+  return wrap;
+}
+
+// ── SETTINGS ─────────────────────────────────────────────
+function pageSettings() {
+  const wrap = div('page');
+  wrap.appendChild(p('eyebrow','Einstellungen'));
+  const h = el('h1'); h.innerHTML='API <em>Key</em>'; wrap.appendChild(h);
+
+  const info = div('');
+  info.style.cssText='background:linear-gradient(135deg,#1a1520,#0f1a1f);border:1px solid rgba(201,169,110,.2);border-radius:14px;padding:14px 15px;font-size:13px;color:var(--mut);line-height:1.7;margin-bottom:16px';
+  info.innerHTML='Der Key wird <strong style="color:var(--txt)">nur lokal</strong> auf deinem Gerät gespeichert und ausschließlich direkt an Anthropic gesendet.<br><br>Erstellen auf: <strong style="color:var(--gold)">console.anthropic.com</strong>';
+  wrap.appendChild(info);
+
+  if (ST.apiKey) {
+    wrap.appendChild(div('status-ok','✓ API Key gespeichert'));
+  }
+
+  wrap.appendChild(p('lbl','Anthropic API Key'));
+  const ki = inp('inp','api-key','sk-ant-…','password');
+  ki.value = ST.apiKey||'';
+  ki.style.marginBottom='12px';
+  wrap.appendChild(ki);
+
+  wrap.appendChild(btn('btn','💾 Key speichern', ()=>{
+    const key = $('api-key')?.value?.trim();
+    if (!key) return alert('Bitte einen API Key eingeben');
+    if (!key.startsWith('sk-')) return alert('Ungültiger Key – muss mit sk- beginnen');
+    ST.apiKey=key; sstore('pf_key',key);
+    alert('✓ API Key gespeichert!');
+    render();
+  }));
+
+  if (ST.apiKey) {
+    wrap.appendChild(btn('btn-red','🗑️ Key entfernen', ()=>{
+      ST.apiKey=''; sstore('pf_key',''); render();
+    }));
+  }
+
+  // Test button
+  const tb = btn('btn-out','🧪 Verbindung testen', async ()=>{
+    tb.textContent='Teste…'; tb.disabled=true;
+    try {
+      const res = await callClaude('Antworte nur mit dem Wort: OK', false, 20);
+      alert('✓ Verbindung erfolgreich! Antwort: '+res.trim());
+    } catch(e) {
+      alert('✗ Fehler: '+e.message);
+    }
+    tb.textContent='🧪 Verbindung testen'; tb.disabled=false;
+  });
+  tb.style.marginTop='8px';
+  wrap.appendChild(tb);
+
+  return wrap;
+}
+
+// ── HELPERS ──────────────────────────────────────────────
+function perfumeRow(pf, clickable) {
+  const row = div('prow');
+  if (!clickable) row.style.cursor='default';
+  const wt = pf.lastWorn===today();
+  row.innerHTML=`
+    <div class="prow-icon">${pf.type==='owned'?'🫙':'💊'}</div>
+    <div class="prow-inf">
+      <div class="prow-brand">${pf.brand||''}</div>
+      <div class="prow-name">${pf.name||''}</div>
+      <div class="prow-dir">${(pf.direction||[]).slice(0,2).join(' · ')}</div>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px">
+      <span class="badge ${pf.type==='owned'?'bo':'bs'}">${pf.type==='owned'?'Eigen':'Probe'}</span>
+      ${wt?'<div style="width:7px;height:7px;border-radius:50%;background:var(--gold);box-shadow:0 0 5px var(--gold)"></div>':''}
+    </div>`;
+  if (clickable) row.onclick=()=>{ ST.sel=pf.id; nav('detail'); };
+  return row;
+}
+
+function emptyState(icon, title, msg, onAdd) {
+  const w = div('');
+  w.style.cssText='text-align:center;padding:48px 16px';
+  w.innerHTML=`<div style="font-size:52px;margin-bottom:14px;opacity:.55">${icon}</div>
+    <div style="font-family:'Playfair Display',serif;font-size:21px;font-weight:400;margin-bottom:8px">${title}</div>
+    <div style="font-size:14px;color:var(--mut);margin-bottom:24px;white-space:pre-line">${msg}</div>`;
+  if (onAdd) {
+    const b = btn('btn','+ Hinzufügen', onAdd);
+    b.style.maxWidth='200px'; b.style.margin='0 auto';
+    w.appendChild(b);
+  }
+  return w;
+}
+
+render();
+</script>
+
+</body>
+</html>
