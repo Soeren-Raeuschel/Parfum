@@ -1,0 +1,26 @@
+# --- VS Code & IDEs ---
+.vscode/
+
+# --- Betriebssysteme ---
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# --- Temporäre Editordateien ---
+*.swp
+*.swo
+*~
+
+# --- KI & LLM Konfigurationen ---
+# Ignoriert deine lokalen Cursor-Regeln, falls sie nicht im Team geteilt werden sollen
+.cursorrules
+
+# --- HTTP-Clients & API-Tests ---
+# Ignoriert die HTTP-Testdatei (oder sensible Umgebungsvariablen wie http-client.env.json)
+test-request.http
+*.env.json

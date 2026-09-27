@@ -1,0 +1,12 @@
+### Test 1: Normaler API-Aufruf (Server online)
+GET http://localhost:3000/api/data
+Accept: application/json
+
+### Test 2: Simulation Fehlerhafter Payload (XSS / Injection Test)
+POST http://localhost:3000/api/data
+Content-Type: application/json
+
+{
+    "username": "<script>alert('xss')</script>",
+    "input": "' OR '1'='1"
+}
