@@ -1,5 +1,79 @@
 const { useState, useEffect, useMemo, useCallback, useRef } = React;
 
+    // ============================================================
+    // ERROR HANDLING MODULE
+    // Zentrale Fehlerklassen und strukturiertes Logging
+    // ============================================================
+
+    class AppError extends Error {
+      constructor(message, code, details = {}) {
+        super(message);
+        this.code = code;
+        this.details = details;
+        this.type = code;
+        this.fatal = false;
+      }
+    }
+
+    class NetworkError extends AppError {
+      constructor(message, details = {}) {
+        super(message, 'NETWORK_ERROR', details);
+      }
+    }
+
+    class RateLimitError extends AppError {
+      constructor(message, details = {}) {
+        super(message, 'RATE_LIMIT_ERROR', details);
+      }
+    }
+
+    class ValidationError extends AppError {
+      constructor(message, details = {}) {
+        super(message, 'VALIDATION_ERROR', details);
+      }
+    }
+
+    class ApiError extends AppError {
+      constructor(message, details = {}) {
+        super(message, 'API_ERROR', details);
+      }
+    }
+
+    class InvalidResponseError extends AppError {
+      constructor(message, details = {}) {
+        super(message, 'INVALID_RESPONSE_ERROR', details);
+      }
+    }
+
+    // Strukturiertes Logging
+    function log(level, message, context = {}) {
+      const timestamp = new Date().toISOString();
+      console.log(`[${level}] ${message}`, { timestamp, level, message, context });
+    }
+
+    function handleApiError(error, context = {}) {
+      if (error instanceof AppError) return error;
+      if (error instanceof TypeError) return new NetworkError('Verbindungsfehler: Bitte prüfen Sie Ihre Internetverbindung.', { cause: error.message });
+      if (error instanceof SyntaxError) return new NetworkError('Verbindungsfehler: Bitte prüfen Sie Ihre Internetverbindung.', { cause: error.message });
+      return new NetworkError('Verbindungsfehler: Bitte versuchen Sie es später noch einmal.', { cause: error.message });
+    }
+
+    function handleValidationError(error, context = {}) {
+      return error;
+    }
+
+    function handleNotFound(error, context = {}) {
+      return new ApiError('Ressource nicht gefunden.', { resource: context?.resource });
+    }
+
+    function handleRateLimit(error, context = {}) {
+      return new RateLimitError('API-Limit erreicht – bitte warten Sie einen Moment.', { retryAfter: error.details?.retryAfter });
+    }
+
+    function handleInvalidResponse(error, context = {}) {
+      return new InvalidResponseError('Ungültige Antwort vom Server.', { details: error.details });
+    }
+
     // ── Debounce helper ─────────────────────────────────────────────────────────────
     function debounce(fn, delay) {
       let timeout;
@@ -1133,12 +1207,11 @@ const { useState, useEffect, useMemo, useCallback, useRef } = React;
 
     async function groqFetch({ messages, temperature = 0.4, max_tokens = 200, cacheKey = null, forceFallback = false }) {
       const apiKey = getGroqKey();
-      if (!apiKey) throw new Error("Kein Groq API-Key. Bitte in Settings → API eintragen.");
+      if (!apiKey) { log('ERROR', 'Groq API key missing'); throw new ApiError('Kein Groq API-Key – bitte unter Settings → API eintragen.'); }
 
       const now = Date.now();
       const retryWaitSec = Math.ceil((_groqRetryAfterUntil - now) / 1000);
 
-      // Model selection – iterate pool, skip individually blocked models
       const pool = forceFallback ? GTM_MODEL_POOL.slice(1) : GTM_MODEL_POOL;
       let lastErr = null;
 
@@ -1159,31 +1232,38 @@ const { useState, useEffect, useMemo, useCallback, useRef } = React;
             const retryAfter = parseInt(res.headers?.get?.("retry-after") || "62", 10);
             const waitMs = isNaN(retryAfter) ? GTM_COOLDOWN_MS : Math.min(retryAfter * 1000, 300000);
             s.blockedUntil = Date.now() + waitMs;
-            // _groqRetryAfterUntil nur aktualisieren wenn ALLE Modelle geblockt (für UI-Countdown)
-            lastErr = new Error(`RATE_LIMIT:${Math.ceil(waitMs/1000)}`);
-            continue; // nächstes Modell probieren
+            lastErr = new RateLimitError(`Rate-Limit für ${modelDef.id}, wechsle zum nächsten Modell`, { retryAfter: Math.ceil(waitMs / 1000) });
+            log('WARN', `Rate limit hit on ${modelDef.id}`, { retryAfter: Math.ceil(waitMs/1000) });
+            continue;
           }
 
           if (!res.ok) {
             const e = await res.json().catch(() => ({}));
-            lastErr = new Error(e?.error?.message || `HTTP ${res.status}`);
+            const errMsg = e?.error?.message || `HTTP ${res.status}`;
+            if (res.status >= 500) {
+              lastErr = new NetworkError(`Server nicht erreichbar (${res.status}). Bitte später erneut versuchen.`);
+            } else if (res.status >= 400 && res.status < 500) {
+              lastErr = new ApiError(`API-Fehler (${res.status}): ${errMsg}`);
+            } else {
+              lastErr = new ApiError(`Unerwartete Antwort (${res.status})`);
+            }
+            log('WARN', `HTTP ${res.status} on ${modelDef.id}`, { error: errMsg });
             continue;
           }
 
           const data = await res.json();
           const text = data.choices?.[0]?.message?.content?.trim();
-          if (!text) { lastErr = new Error("Keine Textantwort von KI"); continue; }
+          if (!text) { lastErr = new InvalidResponseError('Keine Textantwort von KI erhalten.'); continue; }
 
-          // Erfolg: _groqRetryAfterUntil zurücksetzen
           _groqRetryAfterUntil = 0;
           if (cacheKey) groqSetOfflineCache(cacheKey, text);
           return { text, fromCache: false, model: modelDef.id };
         } catch (e) {
-          lastErr = e;
+          lastErr = e instanceof AppError ? e : handleApiError(e, { context: 'groqFetch' });
+          log('WARN', `Fetch error on ${modelDef.id}`, { error: e.message });
         }
       }
 
-      // Alle Modelle geblockt – UI-Countdown setzen
       const allBlocked = pool.every(m => _gtmState[m.id].blockedUntil > Date.now());
       if (allBlocked) {
         const earliest = pool.reduce((min, m) => Math.min(min, _gtmState[m.id].blockedUntil), Infinity);
@@ -1195,7 +1275,7 @@ const { useState, useEffect, useMemo, useCallback, useRef } = React;
         if (cached) return { text: cached, fromCache: true, model: "cache", retryAfterSec: retryWaitSec > 0 ? retryWaitSec : 0 };
       }
 
-      throw lastErr || new Error("Groq API nicht erreichbar");
+      throw lastErr || new NetworkError('Groq API nicht erreichbar. Bitte verbinden Sie sich später erneut.');
     }
 
     // ── Countdown Hook für Rate-Limit-Anzeige ────────────────────────────────────
@@ -1484,7 +1564,7 @@ Nur JSON:
         return null;
       }
       const parsed = extractJSON(raw);
-      if (!parsed) throw new Error("KI-Antwort enthielt kein lesbares JSON. Bitte nochmal versuchen.");
+      if (!parsed) throw new InvalidResponseError("KI-Antwort enthielt kein lesbares JSON. Bitte nochmal versuchen.");
       return normalizeLookupPayload(parsed);
     }
 
