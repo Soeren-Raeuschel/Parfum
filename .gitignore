@@ -24,3 +24,5 @@ Desktop.ini
 # Ignoriert die HTTP-Testdatei (oder sensible Umgebungsvariablen wie http-client.env.json)
 test-request.http
 *.env.json
+# Local Netlify folder
+.netlify
