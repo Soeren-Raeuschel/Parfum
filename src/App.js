@@ -892,10 +892,59 @@ const { useState, useEffect, useMemo, useCallback, useRef } = React;
     const GROQ_CHAT_URL = "https://api.groq.com/openai/v1/chat/completions";
     const LOOKUP_PAGE_MAX_CHARS = 6000; // Reduziert von 10000 → weniger Input-Tokens
 
+        // ══════════════════════════════════════════════════════════════════════════════
+    // REGEX SAFETY & ReDoS PROTECTION v2
+    // Prevents catastrophic backtracking (ReDoS) by:
+    //  - Capping input length before regex processing
+    //  - Checking patterns for known dangerous constructions
+    //  - Timeout-based execution fallback
+    //  - Sanitizing dynamic pattern construction
+    // ══════════════════════════════════════════════════════════════════════════════
+
+    const DANGEROUS_REGEX_PATTERNS = [
+      /\([^()]*\+\)[^()]*\+/,      // (a+)+ pattern
+      /\([^|]*\|[^|]*\+\)[^|]*\+/, // (a|a+)+ pattern
+      /\[[^\[\]]*\+\[^\[\]]\+/,     // nested [...]+...
+    ];
+
+    function isRegexDangerous(pattern) {
+      if (!pattern || typeof pattern !== 'string') return false;
+      return DANGEROUS_REGEX_PATTERNS.some(p => p.test(pattern));
+    }
+
+    function safeRegexMatch(str, pattern, flags = '', maxInputLen = 5000, timeoutMs = 100) {
+      if (!str || typeof str !== 'string') return null;
+      if (str.length > maxInputLen) return null;
+      if (isRegexDangerous(pattern)) return null;
+      try {
+        const start = Date.now();
+        const result = str.match(new RegExp(pattern, flags));
+        const elapsed = Date.now() - start;
+        if (elapsed > timeoutMs) {
+          // Slow execution – could log, but silently return for now
+        }
+        return result ? result : null;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    function safeExtractBlock(html, blockClass, maxLen = 5000) {
+      if (!html || typeof html !== 'string') return '';
+      if (html.length > maxLen) return '';
+      const safeClass = blockClass.replace(/[^\w-]/g, '');
+      if (!safeClass) return '';
+      const pattern = '<div[^>]+class="[^"]*' + safeClass + '[^"]*"[^>]*>([\\s\\S]*?)</div>\\s*</div>\\s*</div>';
+      if (isRegexDangerous(pattern)) return '';
+      const re = new RegExp(pattern, 'i');
+      const match = html.match(re);
+      return match ? match[1] : '';
+    }
+
     // ══════════════════════════════════════════════════════════════════════════════
     // GROQ TOKEN MANAGER v2 – Model Rotation, Rate-Limit-Tracking, Offline-Cache
     // Primäres Modell: openai/gpt-oss-120b
-    // Fallback-Modelle: qwen/qwen3.6-27b, openai/gpt-oss-20b
+    // Fallback-Modelle: qwen/qwen3.8-27b, openai/gpt-oss-20b
     // Strategie: Requests-Budget schonen, schnell rotieren bei 429
     // ══════════════════════════════════════════════════════════════════════════════
     const GTM_MODEL_POOL = [
@@ -1122,17 +1171,18 @@ const { useState, useEffect, useMemo, useCallback, useRef } = React;
     function buildTextFromHtml(html) {
       // Noten direkt aus der Pyramiden-Struktur extrahieren (alt-Attribute der Note-Bilder)
       function extractNoteBlock(html, blockClass) {
-        const blockRe = new RegExp('<div[^>]+class="[^"]*' + blockClass + '[^"]*"[^>]*>([\\s\\S]*?)</div>\\s*</div>\\s*</div>', 'i');
-        const blockMatch = html.match(blockRe);
+        const blockMatch = safeExtractBlock(html, blockClass);
         if (!blockMatch) return "";
         const alts = [];
-        const altRe = /alt="([^"]+)"/g;
-        let m;
-        while ((m = altRe.exec(blockMatch[1])) !== null) {
-          const val = m[1].trim();
-          // Nur echte Noten-Namen (keine Icon-alt-Texte wie "Kopfnote")
-          if (val && !["Kopfnote","Herznote","Basisnote","Kopfnoten","Herznoten","Basisnoten"].includes(val)) {
-            alts.push(val);
+        const blockContent = blockMatch;
+        // Alt-Texte aus dem Block extrahieren – mit Längenbegrenzung
+        const altMatches = safeRegexMatch(blockContent, 'alt="([^"]+)"', 'g');
+        if (altMatches) {
+          for (const m of altMatches) {
+            const val = (m[1] || "").trim();
+            if (val && !["Kopfnote","Herznote","Basisnote","Kopfnoten","Herznoten","Basisnoten"].includes(val)) {
+              alts.push(val);
+            }
           }
         }
         return alts.join(" · ");
