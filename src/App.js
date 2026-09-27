@@ -831,14 +831,49 @@ const { useState, useEffect, useMemo, useCallback, useRef, useReducer } = React;
     function tokenizeText(s) {
       return normalizeText(s).split(/[^a-z0-9äöüß]+/).filter(Boolean);
     }
-    function useDebouncedValue(value, delay = 300) {
+    // ── Enhanced debouncing with AbortController ──────────────────────────────────
+    function useDebounce(value, delay = 300) {
       const [debounced, setDebounced] = useState(value);
+      const timeoutRef = useRef(null);
+      const abortControllerRef = useRef(null);
+      
       useEffect(() => {
-        const t = setTimeout(() => setDebounced(value), delay);
-        return () => clearTimeout(t);
+        // Clear previous timeout
+        if (timeoutRef.current) {
+          clearTimeout(timeoutRef.current);
+        }
+        
+        // Abort previous async operation (if any)
+        if (abortControllerRef.current) {
+          abortControllerRef.current.abort();
+        }
+        
+        // Create new AbortController for this cycle
+        abortControllerRef.current = new AbortController();
+        
+        // Set new timeout
+        timeoutRef.current = setTimeout(() => {
+          setDebounced(value);
+        }, delay);
+        
+        // Cleanup on unmount or before next effect run
+        return () => {
+          if (timeoutRef.current) clearTimeout(timeoutRef.current);
+        };
       }, [value, delay]);
-      return debounced;
+      
+      // Return the debounced value, abort signal and an abort function for external use
+      return { 
+        debounced, 
+        signal: abortControllerRef.current?.signal,
+        abort: () => {
+          if (abortControllerRef.current) {
+            abortControllerRef.current.abort();
+          }
+        }
+      };
     }
+    // ──────────────────────────────────────────────────────────────────────────────
     function sanitizePerfume(item) {
       const src = item && typeof item === "object" ? item : {};
       const cleanStr = (v, max = 300) => String(v == null ? "" : v).trim().slice(0, max);
@@ -5375,7 +5410,7 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
 
     function SammlungTab({ items, log, notes, onDelete, onUpdate, onExport, onSaveNote, onLog, fillLevels, onSetFill, priceMl, onSavePriceMl }) {
       const [rawSearch, setRawSearch] = useState("");
-      const debouncedRawSearch = useDebouncedValue(rawSearch, 280);
+      const { debounced: debouncedRawSearch, signal: searchSignal, abort: abortSearch } = useDebounce(rawSearch, 300);
       const [activeTerms, setActiveTerms] = useState([]); // committed search terms
       const [fam, setFam] = useState("Alle");
       const [seas, setSeas] = useState("Alle");
@@ -5384,8 +5419,11 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
       const [detail, setDetail] = useState(null);
       const [showNotesPicker, setShowNotesPicker] = useState(false);
       const [displayCount, setDisplayCount] = useState(15);
+      const [filteredItems, setFilteredItems] = useState([]);
       const inputRef = useRef(null);
       const sammlungDetailRef = useRef(null);
+
+      
 
       useEffect(() => {
         if (detail && !items.find(x => x.id === detail)) setDetail(null);
@@ -5410,13 +5448,14 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
       const allNotes = useMemo(() => getAllNotes(items), [items]);
       const families = useMemo(() => ["Alle", ...new Set(items.map(i => i.family).filter(Boolean))].sort(), [items]);
 
-      // Combined terms = committed + current rawSearch (live preview)
+            // Combined terms = committed + current rawSearch (live preview)
       const liveTerms = useMemo(() => {
         const extra = debouncedRawSearch.split(/[\s,]+/).map(t => t.trim()).filter(Boolean);
         return [...new Set([...activeTerms, ...extra])].map(normalizeTerm);
       }, [activeTerms, debouncedRawSearch]);
 
-      const filtered = useMemo(() => {
+// Helper: run the actual filtering logic (shared between effects)
+      const runFilters = useCallback(() => {
         const wc = {}; log.forEach(l => { wc[l.id] = (wc[l.id] || 0) + 1; });
         let r = items
           .map(p => {
@@ -5435,10 +5474,40 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
         if (sort === "family") r = [...r].sort((a, b) => a.family.localeCompare(b.family));
         if (sort === "worn") r = [...r].sort((a, b) => (wc[b.id] || 0) - (wc[a.id] || 0));
         return r;
-      }, [items, liveTerms, fam, seas, fmt, sort, log]);
+      }, [items, liveTerms, log, fam, seas, fmt, sort]);
+      // Asynchronous search with AbortController to cancel obsolete requests
+      // and prevent race conditions when new input arrives.
+      useEffect(() => {
+        // If the search has been aborted (new input arrived), skip
+        if (searchSignal?.aborted) return;
+
+        // Schedule the search asynchronously
+        const timeoutId = setTimeout(() => {
+          // Double-check that the search hasn't been aborted
+          if (searchSignal?.aborted) return;
+
+          // Run the actual filtering using shared helper
+          const result = runFilters();
+          // Only apply results if the search hasn't been cancelled
+          if (!searchSignal?.aborted) {
+            setFilteredItems(result);
+          }
+        }, 0);
+
+        // Cleanup: abort this search when a new one starts or on unmount
+        return () => {
+          clearTimeout(timeoutId);
+          abortSearch();
+        };
+      }, [debouncedRawSearch, searchSignal, runFilters]);
+
+      // Also run filtering when non-search filters change (sync is fine here)
+      useEffect(() => {
+        setFilteredItems(runFilters());
+      }, [runFilters]);
       // Reset displayCount when filters change
       useEffect(() => { setDisplayCount(15); }, [liveTerms, fam, seas, fmt, sort]);
-      const visible = useMemo(() => filtered.slice(0, displayCount), [filtered, displayCount]);
+      const visible = useMemo(() => filteredItems.slice(0, displayCount), [filteredItems, displayCount]);
 
       // Note hits to display per perfume card
       const noteFieldLabel = { top: "↑", middle: "○", base: "↓" };
@@ -5559,8 +5628,8 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
           </div>
 
           <div style={{ fontSize: 11, color: "#888780", marginBottom: 10 }}>
-            {filtered.length} / {items.length}
-            {filtered.length > displayCount ? ` · zeige ${displayCount}` : ""}
+            {filteredItems.length} / {items.length}
+            {filteredItems.length > displayCount ? ` · zeige ${displayCount}` : ""}
           </div>
 
           {/* Results */}
@@ -5580,13 +5649,13 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
               <PerfumeCard key={p.id} p={p} notes={notes} onClick={() => setDetail(p.id)} noteFieldLabel={noteFieldLabel} fillLevel={fillLevels?.[p.id] ?? null} />
             );
           })}
-          {filtered.length > displayCount && (
+          {filteredItems.length > displayCount && (
             <button onClick={() => setDisplayCount(c => c + 15)}
               style={{ ...S.btn("out"), width: "100%", fontSize: 12, padding: "12px", marginBottom: 8 }}>
-              Mehr anzeigen ({filtered.length - displayCount} weitere)
+              Mehr anzeigen ({filteredItems.length - displayCount} weitere)
             </button>
           )}
-          {filtered.length === 0 && (
+          {filteredItems.length === 0 && (
             <div style={{ textAlign: "center", padding: "40px 20px" }}>
               <div style={{ fontSize: 36, marginBottom: 12, opacity: 0.5 }}>🔍</div>
               <div style={{ fontSize: 14, color: "#888780", marginBottom: 16 }}>
