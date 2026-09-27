@@ -1,4 +1,4 @@
-const { useState, useEffect, useMemo, useCallback, useRef } = React;
+const { useState, useEffect, useMemo, useCallback, useRef, useReducer } = React;
 
     // ============================================================
     // ERROR HANDLING MODULE
@@ -7138,63 +7138,74 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
     }
 
     // ── Main App ──────────────────────────────────────────────────────────────────
-    function App() {
-      const [items, setItems] = useState([]);
-      const [log, setLog] = useState([]);
-      const [notes, setNotes] = useState({});
-      const [wishlist, setWishlist] = useState([]);
-      const [wishDetailsCache, setWishDetailsCache] = useState({});
-      const [prefs, setPrefs] = useState({ appName: "Sillage" });
-      const [userNotePrefs, setUserNotePrefs] = useState([]);
-      const [userFamilyPrefs, setUserFamilyPrefs] = useState([]);
-      const [fillLevels, setFillLevels] = useState({});
-      const [priceMl, setPriceMl] = useState({});
-      const [tab, setTab] = useState("heute");
-      const [toast, setToast] = useState({ msg: "", show: false });
-      const [loaded, setLoaded] = useState(false);
-      const [backStack, setBackStack] = useState([]);
-      const [detail, setDetail] = useState(null);
-      const [showOnboard, setShowOnboard] = useState(false);
+        function App() {
+      // ═══════════════════════════════════════════════════════════════════
+      // Zentraler App-State via useReducer – alle Daten in einem Objekt
+      // ══════════════════════════════════════════════════════════════════
+      const [state, dispatch] = useReducer((s, a) => {
+        switch (a.type) {
+          case 'HYDRATE_ALL': return { ...s, ...a.payload };
+          case 'SET_ITEMS': return { ...s, items: a.payload };
+          case 'SET_LOG': return { ...s, log: a.payload };
+          case 'SET_NOTES': return { ...s, notes: a.payload };
+          case 'SET_WISHLIST': return { ...s, wishlist: a.payload };
+          case 'SET_WISH_DETAILS_CACHE': return { ...s, wishDetailsCache: a.payload };
+          case 'SET_PREFS': return { ...s, prefs: a.payload };
+          case 'SET_USER_NOTE_PREFS': return { ...s, userNotePrefs: a.payload };
+          case 'SET_USER_FAMILY_PREFS': return { ...s, userFamilyPrefs: a.payload };
+          case 'SET_FILL_LEVELS': return { ...s, fillLevels: a.payload };
+          case 'SET_PRICE_ML': return { ...s, priceMl: a.payload };
+          case 'SET_TAB': return { ...s, tab: a.payload };
+          case 'SET_TOAST': return { ...s, toast: a.payload };
+          case 'SET_LOADED': return { ...s, loaded: a.payload };
+          case 'SET_BACK_STACK': return { ...s, backStack: a.payload };
+          case 'SET_DETAIL': return { ...s, detail: a.payload };
+          case 'SET_SHOW_ONBOARD': return { ...s, showOnboard: a.payload };
+          default: return s;
+        }
+      }, {
+        items: [], log: [], notes: {},
+        wishlist: [], wishDetailsCache: {},
+        prefs: { appName: "Sillage" }, userNotePrefs: [], userFamilyPrefs: [],
+        fillLevels: {}, priceMl: {},
+        tab: "heute", toast: { msg: "", show: false }, loaded: false,
+        backStack: [], detail: null, showOnboard: false,
+      });
       const { errors, pushError, dismiss } = useErrorSystem();
-      // App-level detail overlay (Statistik, Heute, Ordner etc.)
-      const appDetailPerfume = detail ? items.find(x => x.id === detail) || null : null;
-      const appDetailRef = useRef(null);
-      useBodyLock(!!appDetailPerfume || showOnboard);
-
+      // ── Hydration (einmalig beim Mount) ──────────────────────────
       useEffect(() => {
         (async () => {
           try {
-            setItems(hydrateItems(localStorage.getItem(KEYS.items)));
-            setLog(hydrateLog(localStorage.getItem(KEYS.log)));
-            setNotes(hydrateNotes(localStorage.getItem(KEYS.notes)));
-            setWishlist(hydrateWishlist(localStorage.getItem(KEYS.wishlist)));
-            setPrefs(hydratePrefs(localStorage.getItem(KEYS.prefs)));
-            setFillLevels(hydrateFillLevels(localStorage.getItem(KEYS.fillLevels)));
-            setPriceMl(hydratePriceMl(localStorage.getItem(KEYS.priceMl)));
+            dispatch({ type: 'HYDRATE_ALL', payload: {
+              items: hydrateItems(localStorage.getItem(KEYS.items)),
+              log: hydrateLog(localStorage.getItem(KEYS.log)),
+              notes: hydrateNotes(localStorage.getItem(KEYS.notes)),
+              wishlist: hydrateWishlist(localStorage.getItem(KEYS.wishlist)),
+              prefs: hydratePrefs(localStorage.getItem(KEYS.prefs)),
+              fillLevels: hydrateFillLevels(localStorage.getItem(KEYS.fillLevels)),
+              priceMl: hydratePriceMl(localStorage.getItem(KEYS.priceMl)),
+            } });
             const savedNotePrefs = localStorage.getItem(KEYS.userNotePrefs);
-            if (savedNotePrefs) setUserNotePrefs(safeParseJSON(savedNotePrefs, []));
+            if (savedNotePrefs) dispatch({ type: 'SET_USER_NOTE_PREFS', payload: safeParseJSON(savedNotePrefs, []) });
             const savedFamilyPrefs = localStorage.getItem(KEYS.userFamilyPrefs);
-            if (savedFamilyPrefs) setUserFamilyPrefs(safeParseJSON(savedFamilyPrefs, []));
+            if (savedFamilyPrefs) dispatch({ type: 'SET_USER_FAMILY_PREFS', payload: safeParseJSON(savedFamilyPrefs, []) });
             const r7 = localStorage.getItem(KEYS.onboarding);
-            if (!r7) setShowOnboard(true);
-            else {
-              const ob = safeParseJSON(r7, null);
-              if (!ob || !ob.done) setShowOnboard(true);
-            }
+            if (!r7) dispatch({ type: 'SET_SHOW_ONBOARD', payload: true });
+            else { const ob = safeParseJSON(r7, null); if (!ob || !ob.done) dispatch({ type: 'SET_SHOW_ONBOARD', payload: true }); }
           } catch (e) { pushError(e); }
-          setLoaded(true);
+          dispatch({ type: 'SET_LOADED', payload: true });
         })();
       }, []);
 
-      const saveItems = useCallback(async n => { setItems(n); try { (localStorage.setItem(KEYS.items, JSON.stringify(n))); } catch (e) { pushError(e); } }, [pushError]);
-      const saveLog = useCallback(async n => { setLog(n); try { (localStorage.setItem(KEYS.log, JSON.stringify(n))); } catch { } }, []);
-      const saveNotes = useCallback(async n => { setNotes(n); try { (localStorage.setItem(KEYS.notes, JSON.stringify(n))); } catch { } }, []);
-      const saveWishlist = useCallback(async n => { setWishlist(n); try { (localStorage.setItem(KEYS.wishlist, JSON.stringify(n))); } catch { } }, []);
-      const savePrefs = useCallback(async n => { setPrefs(n); try { (localStorage.setItem(KEYS.prefs, JSON.stringify(n))); } catch { } }, []);
-      const saveUserNotePrefs = useCallback(async n => { setUserNotePrefs(n); try { (localStorage.setItem(KEYS.userNotePrefs, JSON.stringify(n))); } catch { } }, []);
-      const saveUserFamilyPrefs = useCallback(async n => { setUserFamilyPrefs(n); try { (localStorage.setItem(KEYS.userFamilyPrefs, JSON.stringify(n))); } catch { } }, []);
-      const saveFillLevels = useCallback(async n => { setFillLevels(n); try { (localStorage.setItem(KEYS.fillLevels, JSON.stringify(n))); } catch { } }, []);
-      const savePriceMl = useCallback(async n => { setPriceMl(n); try { (localStorage.setItem(KEYS.priceMl, JSON.stringify(n))); } catch { } }, []);
+      const saveItems = useCallback(async n => { dispatch({ type: 'SET_ITEMS', payload: n }); try { localStorage.setItem(KEYS.items, JSON.stringify(n)); } catch (e) { pushError(e); } }, [pushError]);
+      const saveLog = useCallback(async n => { dispatch({ type: 'SET_LOG', payload: n }); try { localStorage.setItem(KEYS.log, JSON.stringify(n)); } catch { } }, []);
+      const saveNotes = useCallback(async n => { dispatch({ type: 'SET_NOTES', payload: n }); try { localStorage.setItem(KEYS.notes, JSON.stringify(n)); } catch { } }, []);
+      const saveWishlist = useCallback(async n => { dispatch({ type: 'SET_WISHLIST', payload: n }); try { localStorage.setItem(KEYS.wishlist, JSON.stringify(n)); } catch { } }, []);
+      const savePrefs = useCallback(async n => { dispatch({ type: 'SET_PREFS', payload: n }); try { localStorage.setItem(KEYS.prefs, JSON.stringify(n)); } catch { } }, []);
+      const saveUserNotePrefs = useCallback(async n => { dispatch({ type: 'SET_USER_NOTE_PREFS', payload: n }); try { localStorage.setItem(KEYS.userNotePrefs, JSON.stringify(n)); } catch { } }, []);
+      const saveUserFamilyPrefs = useCallback(async n => { dispatch({ type: 'SET_USER_FAMILY_PREFS', payload: n }); try { localStorage.setItem(KEYS.userFamilyPrefs, JSON.stringify(n)); } catch { } }, []);
+      const saveFillLevels = useCallback(async n => { dispatch({ type: 'SET_FILL_LEVELS', payload: n }); try { localStorage.setItem(KEYS.fillLevels, JSON.stringify(n)); } catch { } }, []);
+      const savePriceMl = useCallback(async n => { dispatch({ type: 'SET_PRICE_ML', payload: n }); try { localStorage.setItem(KEYS.priceMl, JSON.stringify(n)); } catch { } }, []);
 
       // Debounced versions for frequent updates (500ms delay)
       const saveItemsDebounced = useMemo(() => debounce(n => {
@@ -7213,7 +7224,7 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
         try { localStorage.setItem(KEYS.priceMl, JSON.stringify(n)); } catch { }
       }, 500), []);
 
-      const handleImport = useCallback(p => {
+            const handleImport = useCallback(p => {
         const validated = (Array.isArray(p) ? p : []).map(item => sanitizePerfume(item)).map(item => ({
           ...item,
           fillLevel: item.format === "Flakon" ? item.fillLevel : undefined,
@@ -7223,20 +7234,20 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
       const handleAdd = useCallback(p => {
         const safe = sanitizePerfume(p);
         if (!safe.name) return;
-        saveItems([...items, safe]);
-      }, [items, saveItems]);
-      const handleDelete = useCallback(id => saveItems(items.filter(p => p.id !== id)), [items, saveItems]);
-      const handleUpdate = useCallback((id, ch) => saveItems(items.map(p => p.id === id ? sanitizePerfume({ ...p, ...(ch || {}) }) : p)), [items, saveItems]);
+        saveItems([...state.items, safe]);
+      }, [state.items, saveItems]);
+      const handleDelete = useCallback(id => saveItems(state.items.filter(p => p.id !== id)), [state.items, saveItems]);
+      const handleUpdate = useCallback((id, ch) => saveItems(state.items.map(p => p.id === id ? sanitizePerfume({ ...p, ...(ch || {}) }) : p)), [state.items, saveItems]);
       const handleLog = useCallback(p => {
-        const next = [...log, { id: p.id, ts: Date.now() }].slice(-1000);
-        setLog(next);
+        const next = [...state.log, { id: p.id, ts: Date.now() }].slice(-1000);
+        dispatch({ type: 'SET_LOG', payload: next });
         // Use immediate save (not debounced) so a log entry is never lost if the
         // user closes the app within the 500 ms debounce window.
         try { localStorage.setItem(KEYS.log, JSON.stringify(next)); } catch { }
-        setToast({ msg: "✓ Getragen", show: true });
-        setTimeout(() => setToast(t => ({ ...t, show: false })), 2000);
-      }, [log]);
-      const handleExport = useCallback(() => downloadTSV(items), [items]);
+        dispatch({ type: 'SET_TOAST', payload: { msg: "✓ Getragen", show: true } });
+        setTimeout(() => dispatch({ type: 'SET_TOAST', payload: t => ({ ...t, show: false }) }), 2000);
+      }, [state.log]);
+      const handleExport = useCallback(() => downloadTSV(state.items), [state.items]);
       // Full data reset: clears items, log, notes, fill levels, price data.
       // Preserves prefs (app name), API key, and user preference selections.
       const handleClearAllData = useCallback(() => {
@@ -7246,26 +7257,30 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
         saveFillLevels({});
         savePriceMl({});
       }, [saveItems, saveLog, saveNotes, saveFillLevels, savePriceMl]);
-      const handleSaveNote = useCallback((pid, pnotes) => { const next = { ...notes, [pid]: pnotes }; setNotes(next); saveNotesDebounced(next); }, [notes, saveNotesDebounced]);
-      const handleSetAppName = useCallback(name => savePrefs({ ...prefs, appName: name }), [prefs, savePrefs]);
+      const handleSaveNote = useCallback((pid, pnotes) => {
+        const next = { ...state.notes, [pid]: pnotes };
+        dispatch({ type: 'SET_NOTES', payload: next });
+        saveNotesDebounced(next);
+      }, [state.notes, saveNotesDebounced]);
+      const handleSetAppName = useCallback(name => savePrefs({ ...state.prefs, appName: name }), [state.prefs, savePrefs]);
       const handleSetFill = useCallback((id, level) => {
         // STRICT: only allow fill level for Flakons
-        const item = items.find(p => p.id === id);
+        const item = state.items.find(p => p.id === id);
         if (!item || item.format !== "Flakon") return;
-        const next = level === null ? { ...fillLevels } : { ...fillLevels, [id]: level };
+        const next = level === null ? { ...state.fillLevels } : { ...state.fillLevels, [id]: level };
         if (level === null) delete next[id];
-        setFillLevels(next);
+        dispatch({ type: 'SET_FILL_LEVELS', payload: next });
         saveFillLevelsDebounced(next);
-      }, [items, fillLevels, saveFillLevelsDebounced]);
+      }, [state.items, state.fillLevels, saveFillLevelsDebounced]);
       const handleSavePriceMl = useCallback((id, data) => {
-        const next = { ...priceMl, [id]: data };
-        setPriceMl(next);
+        const next = { ...state.priceMl, [id]: data };
+        dispatch({ type: 'SET_PRICE_ML', payload: next });
         savePriceMlDebounced(next);
-      }, [priceMl, savePriceMlDebounced]);
+      }, [state.priceMl, savePriceMlDebounced]);
 
       // Onboarding completion
       const handleOnboardComplete = useCallback(async (data) => {
-        setShowOnboard(false);
+        dispatch({ type: 'SET_SHOW_ONBOARD', payload: false });
         try {
           localStorage.setItem(KEYS.onboarding, JSON.stringify({ done: true, data, ts: Date.now() }));
         } catch (e) { pushError(e); }
@@ -7274,18 +7289,18 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
           const styleFamilies = ONBOARD_STYLES.filter(s => (data.styles || []).includes(s.id)).map(s => s.family);
           const directFamilies = data.favFamilies || [];
           const merged = [...new Set([...directFamilies, ...styleFamilies])];
-          savePrefs({ ...prefs, favFamilies: merged, favOccs: data.occasions || [] });
+          savePrefs({ ...state.prefs, favFamilies: merged, favOccs: data.occasions || [] });
           if (merged.length) saveUserFamilyPrefs(merged);
         }
-      }, [prefs, savePrefs, saveUserFamilyPrefs, pushError]);
+      }, [state.prefs, savePrefs, saveUserFamilyPrefs, pushError]);
 
       // Fill-level warnings for low Flakons
       const lowFillWarnings = useMemo(() =>
-        items.filter(p => p.format === "Flakon" && fillLevels[p.id] !== undefined && fillLevels[p.id] <= 25)
-        , [items, fillLevels]);
+        state.items.filter(p => p.format === "Flakon" && state.fillLevels[p.id] !== undefined && state.fillLevels[p.id] <= 25)
+        , [state.items, state.fillLevels]);
 
-      const wishCount = wishlist.length;
-      const declutterCount = useMemo(() => getDeclutterSuggestions(items, log).length, [items, log]);
+      const wishCount = state.wishlist.length;
+      const declutterCount = useMemo(() => getDeclutterSuggestions(state.items, state.log).length, [state.items, state.log]);
 
       const TABS = [
         { id: "heute", l: "HEUTE", i: "☀" },
@@ -7298,7 +7313,12 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
         { id: "settings", l: "SETTINGS", i: "⚙" },
       ];
 
-      if (!loaded) return (
+      // App-level detail overlay state
+      const appDetailPerfume = state.detail ? state.items.find(x => x.id === state.detail) || null : null;
+      const appDetailRef = useRef(null);
+      useBodyLock(!!appDetailPerfume || state.showOnboard);
+
+      if (!state.loaded) return (
         <div style={{ ...S.app, alignItems: "center", justifyContent: "center", background: "#FAFAF8" }} role="status" aria-live="polite">
           <div style={{ textAlign: "center" }}>
             <div style={{ fontSize: 32, marginBottom: 16, animation: "breathe 2s ease-in-out infinite" }}>◇</div>
@@ -7313,42 +7333,40 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
           <ErrorBanner errors={errors} onDismiss={dismiss} />
 
           {/* Toast Notification */}
-          {toast.show && (
+          {state.toast.show && (
             <div style={{
               position: "fixed", bottom: 100, left: "50%", transform: "translateX(-50%)",
               background: "#1A1A18", color: "#fff", padding: "12px 24px", borderRadius: 24,
               fontSize: 13, boxShadow: "0 8px 30px rgba(26,26,24,0.3)", zIndex: 9999,
               animation: "fadeIn .3s ease-out"
             }}>
-              {toast.msg}
+              {state.toast.msg}
             </div>
           )}
 
           {/* Onboarding Modal */}
-          {showOnboard && items.length === 0 && (
+          {state.showOnboard && state.items.length === 0 && (
             <OnboardingModal onComplete={handleOnboardComplete} />
           )}
-
-
 
           <header style={S.hdr}>
             <h1 style={{
               fontSize: 20, fontWeight: 400, letterSpacing: "-0.5px", color: "#1A1A18",
               margin: "0 0 14px", display: "flex", alignItems: "baseline", gap: 8
             }}>
-              {prefs.appName}
+              {state.prefs.appName}
               <span style={{ fontSize: 11, color: "#B4B2A9", fontWeight: 400, letterSpacing: "0.5px" }}>
-                {items.length > 0 ? `${items.length} parfüms` : ""}
+                {state.items.length > 0 ? `${state.items.length} parfüms` : ""}
               </span>
             </h1>
             <nav style={S.tabs} role="tablist" aria-label="Hauptnavigation">
               {TABS.map(t => (
                 <button key={t.id} role="tab"
-                  aria-selected={tab === t.id}
+                  aria-selected={state.tab === t.id}
                   aria-controls={`panel-${t.id}`}
                   id={`tab-${t.id}`}
-                  onClick={() => { setDetail(null); setBackStack(s => [...s, tab].slice(-10)); setTab(t.id); }}
-                  style={{ ...S.tab(tab === t.id), whiteSpace: "nowrap", position: "relative" }}>
+                  onClick={() => { dispatch({ type: 'SET_DETAIL', payload: null }); dispatch({ type: 'SET_BACK_STACK', payload: s => [...s, state.tab].slice(-10) }); dispatch({ type: 'SET_TAB', payload: t.id }); }}
+                  style={{ ...S.tab(state.tab === t.id), whiteSpace: "nowrap", position: "relative" }}>
                   <span style={{ marginRight: 1, fontSize: 9 }}>{t.i}</span>{t.l}
                   {t.badge && <span style={{
                     position: "absolute", top: 1, right: 1, fontSize: 6, background: "#E24B4A", color: "#fff",
@@ -7358,46 +7376,46 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
               ))}
             </nav>
           </header>
-          <PullToRefresh tabKey={tab}>
-            <main key={tab} style={{...S.body, animation: "fadeInUp .18s ease-out both"}} role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`}>
-              {tab === "heute" && (
-                <HeuteTab items={items} log={log} onLog={handleLog}
-                  pushError={pushError} prefs={prefs} priceMl={priceMl}
-                  userNotePrefs={userNotePrefs} userFamilyPrefs={userFamilyPrefs}
-                  onNavigate={id => setTab(id)}
-                  onSelectPerfume={id => { setBackStack(s => [...s, tab].slice(-10)); setDetail(id); }} />
+          <PullToRefresh tabKey={state.tab}>
+            <main key={state.tab} style={{...S.body, animation: "fadeInUp .18s ease-out both"}} role="tabpanel" id={`panel-${state.tab}`} aria-labelledby={`tab-${state.tab}`}>
+              {state.tab === "heute" && (
+                <HeuteTab items={state.items} log={state.log} onLog={handleLog}
+                  pushError={pushError} prefs={state.prefs} priceMl={state.priceMl}
+                  userNotePrefs={state.userNotePrefs} userFamilyPrefs={state.userFamilyPrefs}
+                  onNavigate={id => dispatch({ type: 'SET_TAB', payload: id })}
+                  onSelectPerfume={id => { dispatch({ type: 'SET_DETAIL', payload: null }); dispatch({ type: 'SET_BACK_STACK', payload: s => [...s, state.tab].slice(-10) }); dispatch({ type: 'SET_DETAIL', payload: id }); }} />
               )}
-              {tab === "sammlung" && (
-                <SammlungTab items={items} log={log} notes={notes}
+              {state.tab === "sammlung" && (
+                <SammlungTab items={state.items} log={state.log} notes={state.notes}
                   onDelete={handleDelete} onUpdate={handleUpdate}
                   onExport={handleExport} onSaveNote={handleSaveNote} onLog={handleLog}
-                  fillLevels={fillLevels} onSetFill={handleSetFill}
-                  priceMl={priceMl} onSavePriceMl={handleSavePriceMl} />
+                  fillLevels={state.fillLevels} onSetFill={handleSetFill}
+                  priceMl={state.priceMl} onSavePriceMl={handleSavePriceMl} />
               )}
-              {tab === "statistik" && (
-                <StatistikTab items={items} log={log} notes={notes} onSelectPerfume={id => { setBackStack(s => [...s, tab].slice(-10)); setDetail(id); }} />
+              {state.tab === "statistik" && (
+                <StatistikTab items={state.items} log={state.log} notes={state.notes} onSelectPerfume={id => { dispatch({ type: 'SET_DETAIL', payload: null }); dispatch({ type: 'SET_BACK_STACK', payload: s => [...s, state.tab].slice(-10) }); dispatch({ type: 'SET_DETAIL', payload: id }); }} />
               )}
-              {tab === "ordner" && (
-                <OrdnerTab items={items} onSelectPerfume={id => { setBackStack(s => [...s, tab].slice(-10)); setDetail(id); }} />
+              {state.tab === "ordner" && (
+                <OrdnerTab items={state.items} onSelectPerfume={id => { dispatch({ type: 'SET_DETAIL', payload: null }); dispatch({ type: 'SET_BACK_STACK', payload: s => [...s, state.tab].slice(-10) }); dispatch({ type: 'SET_DETAIL', payload: id }); }} />
               )}
-              {tab === "layering" && (
-                <LayeringTab items={items} />
+              {state.tab === "layering" && (
+                <LayeringTab items={state.items} />
               )}
-              {tab === "declutter" && (
-                <DeclutterTab items={items} log={log} onDelete={handleDelete} onSelectPerfume={id => { setBackStack(s => [...s, tab].slice(-10)); setDetail(id); }} />
+              {state.tab === "declutter" && (
+                <DeclutterTab items={state.items} log={state.log} onDelete={handleDelete} onSelectPerfume={id => { dispatch({ type: 'SET_DETAIL', payload: null }); dispatch({ type: 'SET_BACK_STACK', payload: s => [...s, state.tab].slice(-10) }); dispatch({ type: 'SET_DETAIL', payload: id }); }} />
               )}
-              {tab === "wunschliste" && (
-                <WunschlisteTab wishlist={wishlist} onSave={saveWishlist}
-                  items={items} onAddToCollection={handleAdd}
-                  onSelectPerfume={id => { setBackStack(s => [...s, tab].slice(-10)); setDetail(id); }}
-                  wishDetailsCache={wishDetailsCache} setWishDetailsCache={setWishDetailsCache} />
+              {state.tab === "wunschliste" && (
+                <WunschlisteTab wishlist={state.wishlist} onSave={saveWishlist}
+                  items={state.items} onAddToCollection={handleAdd}
+                  onSelectPerfume={id => { dispatch({ type: 'SET_DETAIL', payload: null }); dispatch({ type: 'SET_BACK_STACK', payload: s => [...s, state.tab].slice(-10) }); dispatch({ type: 'SET_DETAIL', payload: id }); }}
+                  wishDetailsCache={state.wishDetailsCache} setWishDetailsCache={cache => dispatch({ type: 'SET_WISH_DETAILS_CACHE', payload: cache })}/>
               )}
-              {tab === "settings" && (
-                <EinstellungenTab items={items} onImport={handleImport} onExport={handleExport}
+              {state.tab === "settings" && (
+                <EinstellungenTab items={state.items} onImport={handleImport} onExport={handleExport}
                   onAdd={handleAdd} onClearAll={() => saveItems([])} onClearAllData={handleClearAllData}
-                  appName={prefs.appName} onSetAppName={handleSetAppName}
-                  userNotePrefs={userNotePrefs} setUserNotePrefs={saveUserNotePrefs}
-                  userFamilyPrefs={userFamilyPrefs} setUserFamilyPrefs={saveUserFamilyPrefs} />
+                  appName={state.prefs.appName} onSetAppName={handleSetAppName}
+                  userNotePrefs={state.userNotePrefs} setUserNotePrefs={saveUserNotePrefs}
+                  userFamilyPrefs={state.userFamilyPrefs} setUserFamilyPrefs={saveUserFamilyPrefs} />
               )}
             </main>
           </PullToRefresh>
@@ -7405,12 +7423,12 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
           {/* App-level detail overlay: für Statistik, Heute, Ordner, Declutter, Wunschliste */}
           {appDetailPerfume && (
             <div ref={appDetailRef} style={{ position: "fixed", inset: 0, background: "#FAFAF8", zIndex: 9000, overflowY: "auto", WebkitOverflowScrolling: "touch", overscrollBehavior: "contain", animation: "slideInRight .28s cubic-bezier(0.25,0.46,0.45,0.94) both", padding: 16, paddingTop: "calc(16px + env(safe-area-inset-top))", paddingBottom: "calc(56px + env(safe-area-inset-bottom))" }}>
-              <DetailView perfume={appDetailPerfume} items={items} log={log} notes={notes}
-                onClose={() => setDetail(null)} onDelete={handleDelete}
+              <DetailView perfume={appDetailPerfume} items={state.items} log={state.log} notes={state.notes}
+                onClose={() => dispatch({ type: 'SET_DETAIL', payload: null })} onDelete={handleDelete}
                 onUpdate={handleUpdate} onSaveNote={handleSaveNote} onLog={handleLog}
-                onSearchNote={() => setDetail(null)}
-                fillLevels={fillLevels || {}} onSetFill={handleSetFill}
-                priceMl={priceMl || {}} onSavePriceMl={handleSavePriceMl}
+                onSearchNote={() => dispatch({ type: 'SET_DETAIL', payload: null })}
+                fillLevels={state.fillLevels || {}} onSetFill={handleSetFill}
+                priceMl={state.priceMl || {}} onSavePriceMl={handleSavePriceMl}
                 containerRef={appDetailRef} />
             </div>
           )}
