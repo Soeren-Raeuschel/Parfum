@@ -942,6 +942,111 @@ const { useState, useEffect, useMemo, useCallback, useRef } = React;
     }
 
     // ══════════════════════════════════════════════════════════════════════════════
+    // JSON SCHEMA VALIDATION & RETRY LOGIC
+    // Validates Groq API responses against expected schemas
+    // Automatic retry with stricter prompt on schema violation
+    // ══════════════════════════════════════════════════════════════════════════════
+
+    // Schema definitions for expected JSON responses
+    const JSON_SCHEMAS = {
+      lookup: {
+        requiredKeys: ['name', 'house', 'conc', 'family', 'top', 'middle', 'base', 'season', 'gender'],
+        keyTypes: { name: 'string', house: 'string', conc: 'string', family: 'string', top: 'string', middle: 'string', base: 'string', season: 'string', gender: 'string' },
+        enumConstraints: { conc: ['EDP', 'EDT', 'Parfum', 'EDC', 'Extrait'], family: ['Floral', 'Woody', 'Oriental', 'Fresh', 'Chypre', 'Fougère', 'Gourmand', 'Aquatisch', 'Sonstiges'], season: ['Frühling', 'Sommer', 'Herbst', 'Winter', 'Ganzjährig'], gender: ['Unisex', 'Feminin', 'Maskulin'] }
+      },
+      dayParams: {
+        requiredKeys: ['occasion', 'mood', 'timeOfDay', 'intensityPref', 'longevityPref', 'reasoning'],
+        keyTypes: { occasion: 'string', mood: 'string', timeOfDay: 'string', intensityPref: 'string', longevityPref: 'string', reasoning: 'string' },
+        enumConstraints: { occasion: ['casual', 'work', 'sport', 'evening', 'date', 'sleep', 'special', 'outdoor', 'travel', 'vacation'], mood: ['energetic', 'calm', 'romantic', 'confident', 'mysterious', 'playful', 'sleep'], timeOfDay: ['morning', 'afternoon', 'evening', 'night'], intensityPref: ['light', 'medium', 'strong'], longevityPref: ['short', 'medium', 'long'] },
+        maxLengths: { reasoning: 80 }
+      }
+    };
+
+    // Validates a parsed JSON object against a schema definition
+    function validateJsonSchema(obj, schemaName) {
+      const schema = JSON_SCHEMAS[schemaName];
+      if (!schema) return { valid: false, errors: [`Unknown schema: ${schemaName}`] };
+      if (!obj || typeof obj !== 'object') return { valid: false, errors: ['Response is not an object'] };
+      const errors = [];
+      for (const key of schema.requiredKeys) {
+        if (!(key in obj)) { errors.push(`Missing required key: ${key}`); continue; }
+        const val = obj[key];
+        const expectedType = schema.keyTypes[key];
+        if (expectedType && typeof val !== expectedType) errors.push(`Key "${key}" has wrong type: expected ${expectedType}, got ${typeof val}`);
+      }
+      if (schema.enumConstraints) {
+        for (const [key, allowedValues] of Object.entries(schema.enumConstraints)) {
+          if (key in obj && obj[key] && !allowedValues.includes(obj[key])) errors.push(`Key "${key}" has invalid value "${obj[key]}". Allowed: ${allowedValues.join(', ')}`);
+        }
+      }
+      if (schema.maxLengths) {
+        for (const [key, maxLen] of Object.entries(schema.maxLengths)) {
+          if (key in obj && obj[key] && typeof obj[key] === 'string' && obj[key].length > maxLen) errors.push(`Key "${key}" exceeds max length of ${maxLen} (got ${obj[key].length})`);
+        }
+      }
+      return errors.length === 0 ? { valid: true } : { valid: false, errors };
+    }
+
+    // Schema example for retry instructions
+    function getSchemaExample(schemaName) {
+      if (schemaName === 'lookup') {
+        return { name: '', house: '', conc: 'EDP', family: 'Floral', top: '', middle: '', base: '', season: 'Ganzjährig', gender: 'Unisex' };
+      }
+      if (schemaName === 'dayParams') {
+        return { occasion: 'casual', mood: 'calm', timeOfDay: 'evening', intensityPref: 'medium', longevityPref: 'medium', reasoning: 'Erklärung warum diese Werte passen.' };
+      }
+      return {};
+    }
+
+    // Fetch JSON with automatic retry on schema violation
+    async function fetchJsonWithRetry(groqFetchFn, messages, options = {}) {
+      const { schemaName = 'lookup', maxRetries = 2, baseTemperature = 0.2, maxTokens = 600, cacheKey = null, forceFallback = false } = options;
+      let lastError = null;
+      let currentTemperature = baseTemperature;
+      let currentMessages = [...messages];
+
+      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        try {
+          const response = await groqFetchFn({ messages: currentMessages, temperature: currentTemperature, max_tokens: maxTokens, cacheKey, forceFallback });
+          const raw = response.text;
+
+          // Extract JSON from response (handle markdown fences, etc.)
+          let parsed = null;
+          const extractStrategies = [
+            s => s.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim(),
+            s => { const m = s.match(/\{[\s\S]*\}/); return m ? m[0] : null; },
+            s => { const m = s.match(/\{[^{}]*\}/); return m ? m[0] : null; }
+          ];
+
+          for (const strategy of extractStrategies) {
+            try { const extracted = strategy(raw); if (extracted) { parsed = JSON.parse(extracted); break; } } catch {}
+          }
+
+          if (!parsed) throw new Error('No valid JSON found in response');
+
+          const validation = validateJsonSchema(parsed, schemaName);
+          if (validation.valid) return { parsed, fromCache: response.fromCache, model: response.model };
+
+          lastError = new Error(`Schema validation failed: ${validation.errors.join('; ')}`);
+
+          if (attempt < maxRetries) {
+            const strictInstruction = `\n\nWICHTIG: Vorherige Antwort war ungültig. Antworte AUSSCHLIEßLICH mit exakt diesem JSON-Schema (kein Markdown, kein Text davor/danach):\n${JSON.stringify(getSchemaExample(schemaName))}`;
+            const lastMsg = currentMessages[currentMessages.length - 1];
+            if (lastMsg && lastMsg.role === 'user') {
+              currentMessages = [...currentMessages.slice(0, -1), { ...lastMsg, content: lastMsg.content + strictInstruction }];
+            }
+            currentTemperature = Math.max(0.1, currentTemperature - 0.1);
+            continue;
+          }
+        } catch (e) {
+          lastError = e;
+          if (attempt < maxRetries) { currentTemperature = Math.max(0.1, currentTemperature - 0.1); continue; }
+        }
+      }
+      throw lastError || new Error('Failed to fetch valid JSON after retries');
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════════
     // GROQ TOKEN MANAGER v2 – Model Rotation, Rate-Limit-Tracking, Offline-Cache
     // Primäres Modell: openai/gpt-oss-120b
     // Fallback-Modelle: qwen/qwen3.8-27b, openai/gpt-oss-20b
