@@ -23,3 +23,5 @@ Du musst dich bei der Generierung und Bearbeitung von Code in diesem Projekt str
 
 ## 5. Testumgebung & REST Client
 - Halte die Datei `test-requests.http` aktuell. Alle API-Endpunkte und Fallback-Szenarien müssen dort als ausführbare HTTP-Requests dokumentiert sein.
+
+Das einzige verfügbare Tool zum Bearbeiten von Dateien heißt exakt `editor` – nicht `edit`, nicht `edit_files`, nicht `edit_file`. Verwende ab sofort ausschließlich den exakten Namen `editor` für jede Dateiänderung. Prüfe vor jedem Tool-Call den Toolnamen gegen diese Vorgabe.

@@ -1310,7 +1310,13 @@ const { useState, useEffect, useMemo, useCallback, useRef, useReducer } = React;
         if (cached) return { text: cached, fromCache: true, model: "cache", retryAfterSec: retryWaitSec > 0 ? retryWaitSec : 0 };
       }
 
-      throw lastErr || new NetworkError('Groq API nicht erreichbar. Bitte verbinden Sie sich später erneut.');
+      // Graceful degradation: if no cache is available, return a fallback response
+      // instead of crashing. The app will continue to work with cached data if available.
+      return {
+        text: "Aktiviert gedämpfte Funktion – nur gecachte Antworten sind verfügbar.",
+        fromCache: false,
+        model: "degraded"
+      };
     }
 
     // ── Countdown Hook für Rate-Limit-Anzeige ────────────────────────────────────
