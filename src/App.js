@@ -894,19 +894,24 @@ const { useState, useEffect, useMemo, useCallback, useRef } = React;
 
     // ══════════════════════════════════════════════════════════════════════════════
     // GROQ TOKEN MANAGER v2 – Model Rotation, Rate-Limit-Tracking, Offline-Cache
-    // Limit-Modell: llama-3.3-70b: 30 req/min, 1000 req/Tag, KEIN TPM-Limit
+    // Primäres Modell: openai/gpt-oss-120b
+    // Fallback-Modelle: qwen/qwen3.6-27b, openai/gpt-oss-20b
     // Strategie: Requests-Budget schonen, schnell rotieren bei 429
     // ══════════════════════════════════════════════════════════════════════════════
     const GTM_MODEL_POOL = [
-      { id: "llama-3.3-70b-versatile",  reqPerMin: 30, quality: "high" },
-      { id: "llama-3.1-8b-instant",     reqPerMin: 30, quality: "medium" },
-      { id: "gemma2-9b-it",             reqPerMin: 30, quality: "medium" },
+      { id: "openai/gpt-oss-120b",  reqPerMin: 30, quality: "high" },
+      { id: "qwen/qwen3.8-27b",     reqPerMin: 30, quality: "medium" },
+      { id: "openai/gpt-oss-20b",   reqPerMin: 30, quality: "medium" },
     ];
     const GTM_COOLDOWN_MS = 62000; // 62s nach 429
 
-    const _gtmState = {};
+        const _gtmState = {};
     GTM_MODEL_POOL.forEach(m => {
-      _gtmState[m.id] = { blockedUntil: 0, lastUsed: 0, reqRemaining: 30, reqResetAt: 0 };
+      _gtmState[m.id] = {
+        blockedUntil: 0, lastUsed: 0,
+        reqRemainingDay: 30, reqResetDayAt: 0,   // RPD-Header (Requests per Day)
+        tokRemaining: 8000, tokResetAt: 0,        // TPM-Header (Tokens per Minute)
+      };
     });
 
     const _groqOfflineCache = {};
@@ -936,10 +941,17 @@ const { useState, useEffect, useMemo, useCallback, useRef } = React;
       if (!s) return;
       const remReq = headers.get("x-ratelimit-remaining-requests");
       const resetReq = headers.get("x-ratelimit-reset-requests");
-      if (remReq !== null) s.reqRemaining = parseInt(remReq);
+      if (remReq !== null) s.reqRemainingDay = parseInt(remReq);
       if (resetReq) {
         const secs = parseFloat(resetReq.replace("s",""));
-        s.reqResetAt = Date.now() + secs * 1000;
+        s.reqResetDayAt = Date.now() + secs * 1000;
+      }
+      const remTok = headers.get("x-ratelimit-remaining-tokens");
+      const resetTok = headers.get("x-ratelimit-reset-tokens");
+      if (remTok !== null) s.tokRemaining = parseInt(remTok);
+      if (resetTok) {
+        const secs = parseFloat(resetTok.replace("s", ""));
+        s.tokResetAt = Date.now() + secs * 1000;
       }
       s.lastUsed = Date.now();
     }
@@ -949,13 +961,18 @@ const { useState, useEffect, useMemo, useCallback, useRef } = React;
       for (const m of GTM_MODEL_POOL) {
         const s = _gtmState[m.id];
         if (s.blockedUntil > now) continue;
-        if (s.reqResetAt > 0 && now >= s.reqResetAt) { s.reqRemaining = m.reqPerMin; s.reqResetAt = 0; }
-        if (s.reqRemaining > 1) return m;
+        // Tages-Reset prüfen
+        if (s.reqResetDayAt > 0 && now >= s.reqResetDayAt) { s.reqRemainingDay = m.reqPerMin; s.reqResetDayAt = 0; }
+        // Token-Reset prüfen
+        if (s.tokResetAt > 0 && now >= s.tokResetAt) { s.tokRemaining = 8000; s.tokResetAt = 0; }
+        // Modell überspringen, wenn Request- oder Token-Budget erschöpft
+        if (s.reqRemainingDay <= 1 || s.tokRemaining <= 0) continue;
+        return m;
       }
-      // alle erschöpft → frühestes Reset
+      // alle erschöpft → frühestes Reset (beide Metriken)
       return GTM_MODEL_POOL.reduce((best, m) => {
-        const bt = Math.max(_gtmState[m.id].blockedUntil, _gtmState[m.id].reqResetAt);
-        const bb = Math.max(_gtmState[best.id].blockedUntil, _gtmState[best.id].reqResetAt);
+        const bt = Math.max(_gtmState[m.id].blockedUntil, _gtmState[m.id].reqResetDayAt, _gtmState[m.id].tokResetAt);
+        const bb = Math.max(_gtmState[best.id].blockedUntil, _gtmState[best.id].reqResetDayAt, _gtmState[best.id].tokResetAt);
         return bt < bb ? m : best;
       });
     }
@@ -6489,7 +6506,7 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
         setModelStatus(GTM_MODEL_POOL.map(m => {
           const s = _gtmState[m.id];
           const blocked = s.blockedUntil > now;
-          return { id: m.id.split("-").slice(0,3).join("-"), blocked, req: s.reqRemaining, quality: m.quality };
+          return { id: m.id.split("-").slice(0,3).join("-"), blocked, req: s.reqRemainingDay, tok: s.tokRemaining, quality: m.quality };
         }));
       }, [countdown]);
 
