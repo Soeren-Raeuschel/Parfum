@@ -1199,32 +1199,34 @@ const { useState, useEffect, useMemo, useCallback, useRef, useReducer } = React;
       } catch { return null; }
     }
 
-    function _gtmParseHeaders(headers, modelId) {
+function _gtmParseHeaders(headers, modelId) {
       const s = _gtmState[modelId];
-      if (!s) return;
+      if (!s || typeof s !== 'object' || s === null) return;
       const remReq = headers.get("x-ratelimit-remaining-requests");
       const resetReq = headers.get("x-ratelimit-reset-requests");
-      if (remReq !== null) s.reqRemainingDay = parseInt(remReq);
+      if (remReq !== null && typeof parseInt(remReq) === 'number') s.reqRemainingDay = parseInt(remReq);
       if (resetReq) {
         const secs = parseFloat(resetReq.replace("s",""));
-        s.reqResetDayAt = Date.now() + secs * 1000;
+        if (typeof secs === 'number') s.reqResetDayAt = Date.now() + secs * 1000;
       }
       const remTok = headers.get("x-ratelimit-remaining-tokens");
       const resetTok = headers.get("x-ratelimit-reset-tokens");
-      if (remTok !== null) s.tokRemaining = parseInt(remTok);
+      if (remTok !== null && typeof parseInt(remTok) === 'number') s.tokRemaining = parseInt(remTok);
       if (resetTok) {
         const secs = parseFloat(resetTok.replace("s", ""));
-        s.tokResetAt = Date.now() + secs * 1000;
+        if (typeof secs === 'number') s.tokResetAt = Date.now() + secs * 1000;
       }
       s.lastUsed = Date.now();
-    }
+}
 
     function _gtmSelectModel() {
       const now = Date.now();
       for (const m of GTM_MODEL_POOL) {
         const s = _gtmState[m.id];
-        if (s.blockedUntil > now) continue;
+        if (!s || typeof s !== 'object' || s === null) continue;
         // Tages-Reset prüfen
+        if (s.blockedUntil > now) continue;
+        // Token-Reset prüfen
         if (s.reqResetDayAt > 0 && now >= s.reqResetDayAt) { s.reqRemainingDay = m.reqPerMin; s.reqResetDayAt = 0; }
         // Token-Reset prüfen
         if (s.tokResetAt > 0 && now >= s.tokResetAt) { s.tokRemaining = 8000; s.tokResetAt = 0; }
@@ -1234,8 +1236,10 @@ const { useState, useEffect, useMemo, useCallback, useRef, useReducer } = React;
       }
       // alle erschöpft → frühestes Reset (beide Metriken)
       return GTM_MODEL_POOL.reduce((best, m) => {
-        const bt = Math.max(_gtmState[m.id].blockedUntil, _gtmState[m.id].reqResetDayAt, _gtmState[m.id].tokResetAt);
-        const bb = Math.max(_gtmState[best.id].blockedUntil, _gtmState[best.id].reqResetDayAt, _gtmState[best.id].tokResetAt);
+        const ms = _gtmState[m.id];
+        const bs = _gtmState[best.id];
+        const bt = ms && typeof ms === 'object' ? Math.max(ms.blockedUntil, ms.reqResetDayAt, ms.tokResetAt) : Infinity;
+        const bb = bs && typeof bs === 'object' ? Math.max(bs.blockedUntil, bs.reqResetDayAt, bs.tokResetAt) : -Infinity;
         return bt < bb ? m : best;
       });
     }
@@ -1252,7 +1256,7 @@ const { useState, useEffect, useMemo, useCallback, useRef, useReducer } = React;
 
       for (const modelDef of pool) {
         const s = _gtmState[modelDef.id];
-        if (s.blockedUntil > Date.now()) continue;
+        if (!s || typeof s !== 'object' || s === null || s.blockedUntil > Date.now()) continue;
 
         try {
           const res = await fetch(GROQ_CHAT_URL, {
@@ -1299,9 +1303,12 @@ const { useState, useEffect, useMemo, useCallback, useRef, useReducer } = React;
         }
       }
 
-      const allBlocked = pool.every(m => _gtmState[m.id].blockedUntil > Date.now());
+      const allBlocked = pool.every(m => { const s = _gtmState[m.id]; return s && typeof s === 'object' && s != null && s.blockedUntil > Date.now(); });
       if (allBlocked) {
-        const earliest = pool.reduce((min, m) => Math.min(min, _gtmState[m.id].blockedUntil), Infinity);
+        const earliest = pool.reduce((min, m) => {
+          const s = _gtmState[m.id];
+          return s && typeof s === 'object' && s != null ? Math.min(min, s.blockedUntil) : min;
+        }, Infinity);
         _groqRetryAfterUntil = earliest;
       }
 
@@ -1609,26 +1616,73 @@ Nur JSON:
       return normalizeLookupPayload(parsed);
     }
 
-    // ── Styles ────────────────────────────────────────────────────────────────────
+    // ── Styles (zentralisiert in styles.css via @apply, mit dynamischen Ausnahmen) ────
     const S = {
-      app: { fontFamily: "'Georgia',serif", maxWidth: "100%", height: "100%", background: "#FAFAF8", display: "flex", flexDirection: "column", overflow: "hidden" },
-      hdr: { padding: "calc(12px + env(safe-area-inset-top)) 16px 0", borderBottom: "1px solid #E8E6E0" },
-      tabs: {
-        display: "flex", flexWrap: "nowrap", overflowX: "auto", scrollBehavior: "smooth", gap: 0,
-        paddingBottom: 4, scrollbarWidth: "none", msOverflowStyle: "none", WebkitOverflowScrolling: "touch",
-        minHeight: 44, alignItems: "center", position: "sticky", top: 0, background: "#FAFAF8", zIndex: 100
+      // Statische Styles - geben Klassen zurück für className
+      app: "app",
+      hdr: "hdr",
+      tabs: "tabs",
+      body: "body",
+      card: "card",
+      lbl: "lbl",
+      
+      // Dynamische Styles - geben style-Objekte zurück (können nicht vollständig klassifiziert werden)
+      tab: (a) => ({
+        // Basis-Klasse wird über className toegepast, aktive/inaktive Zustände über Inline-Style
+        borderBottom: `2px solid ${a ? "#1A1A18" : "transparent"}`, 
+        color: a ? "#1A1A18" : "#7A7975",
+        fontWeight: a ? 500 : 400
+      }),
+      dtab: (a) => ({
+        color: a ? "#1A1A18" : "#888780",
+        borderBottom: `2px solid ${a ? "#1A1A18" : "transparent"}`
+      }),
+      pill: (c) => ({
+        background: c + "22",  // Transparenter Hintergrund mit Farbe
+        color: c
+      }),
+      inp: {},  // Keine dynamischen Styles nötig - komplett in styles.css
+      ta: {},   // Keine dynamischen Styles nötig - komplett in styles.css
+      btn: (v) => {
+        // Basis-Styles über className, variant-spezifische über Inline-Style
+        let style = {};
+        if (v === "pri") {
+          style.background = "#1A1A18";
+          style.color = "#fff";
+          style.boxShadow = "0 4px 15px rgba(26,26,24,0.2)";
+        } else if (v === "out") {
+          style.border = "1px solid #D3D1C7";
+          style.background = "transparent";
+          style.color = "#1A1A18";
+        } else {
+          // Standard/secondary
+          style.background = "#F1EFE8";
+          style.color = "#1A1A18";
+        }
+        
+        // Größe
+        if (v === "sm") {
+          style.padding = "6px 12px";
+          style.minHeight = "36px";
+        } else if (v === "lg") {
+          style.padding = "14px 24px";
+          style.minHeight = "44px";
+        } else {
+          style.padding = "10px 16px";
+          style.minHeight = "44px";
+        }
+        
+        return style;
       },
-      tab: a => ({ flex: "0 0 auto", minWidth: 44, maxWidth: 56, padding: "6px 4px", background: "none", border: "none", cursor: "pointer", fontSize: 8, fontFamily: "'Georgia',serif", color: a ? "#1A1A18" : "#7A7975", borderBottom: `2px solid ${a ? "#1A1A18" : "transparent"}`, transition: "all .3s cubic-bezier(0.25,.46,.45,.94)", letterSpacing: "0px", whiteSpace: "nowrap", fontWeight: a ? 500 : 400, textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: 44 }),
-      dtab: a => ({ padding: "10px 14px", minHeight: 44, background: "none", border: "none", cursor: "pointer", fontSize: 12, fontFamily: "'Georgia',serif", color: a ? "#1A1A18" : "#888780", borderBottom: `2px solid ${a ? "#1A1A18" : "transparent"}`, transition: "all .3s cubic-bezier(0.25,.46,.45,.94)" }),
-      body: { flex: 1, overflow: "visible", padding: "16px", paddingBottom: "calc(16px + env(safe-area-inset-bottom))" },
-      card: { background: "#fff", border: "1px solid #E8E6E0", borderRadius: 12, padding: "16px", marginBottom: 12, boxShadow: "0 1px 3px rgba(26,26,24,0.04)" },
-      pill: c => ({ display: "inline-block", fontSize: 10, padding: "2px 8px", borderRadius: 20, background: c + "22", color: c, letterSpacing: "0.3px", transition: "all .3s ease" }),
-      lbl: { fontSize: 10, letterSpacing: "1.5px", color: "#888780", marginBottom: 8 },
-      inp: { width: "100%", padding: "10px 12px", border: "1px solid #D3D1C7", borderRadius: 8, fontSize: 14, fontFamily: "'Georgia',serif", background: "#fff", color: "#1A1A18", boxSizing: "border-box", transition: "all .3s ease", outline: "none" },
-      ta: { width: "100%", padding: "10px 12px", border: "1px solid #D3D1C7", borderRadius: 8, fontSize: 13, fontFamily: "'Georgia',serif", background: "#fff", color: "#1A1A18", boxSizing: "border-box", resize: "vertical", minHeight: 80, lineHeight: 1.6, transition: "all .3s ease", outline: "none" },
-      btn: v => ({ padding: v === "lg" ? "14px 24px" : v === "sm" ? "6px 12px" : "10px 16px", minHeight: v === "sm" ? 36 : 44, borderRadius: 8, border: v === "out" ? "1px solid #D3D1C7" : "none", background: v === "pri" ? "#1A1A18" : v === "out" ? "transparent" : "#F1EFE8", color: v === "pri" ? "#fff" : "#1A1A18", cursor: "pointer", fontSize: 13, fontFamily: "'Georgia',serif", transition: "all .4s cubic-bezier(0.25,.46,.45,.94)", boxShadow: v === "pri" ? "0 4px 15px rgba(26,26,24,0.2)" : "none" }),
-      chip: (a, c) => ({ padding: "10px 14px", minHeight: 44, borderRadius: 20, border: `1px solid ${a ? (c || "#1A1A18") : "#D3D1C7"}`, background: a ? (c || "#1A1A18") : "transparent", color: a ? "#fff" : "#1A1A18", fontSize: 12, cursor: "pointer", fontFamily: "'Georgia',serif", transition: "all .3s cubic-bezier(0.25,.46,.45,.94)" }),
-      skeleton: (w = "100%", h = 12) => ({ width: w, height: h, borderRadius: 6, background: "linear-gradient(90deg,#E8E6E0 25%,#F5F4F1 50%,#E8E6E0 75%)", backgroundSize: "200% 100%", animation: "shimmer 1.5s infinite" }),
+      chip: (a, c) => ({
+        background: a ? (c || "#1A1A18") : "transparent",
+        color: a ? "#fff" : "#1A1A18",
+        border: `1px solid ${a ? (c || "#1A1A18") : "#D3D1C7"}`
+      }),
+      skeleton: (w = "100%", h = 12) => ({
+        width: w,
+        height: `${h}px`
+      })
     };
 
 
@@ -1824,7 +1878,7 @@ Nur JSON:
               <div style={{ fontSize: 10, color: "#888780" }}>Automatisch erkanntes Wetter wird berücksichtigt</div>
             </div>
           </div>
-          <button onClick={onUse} style={{ ...S.btn("pri"), fontSize: 10, padding: "5px 10px", borderRadius: 16 }}>
+          <button onClick={onUse} className="btn" style={{ ...S.btn("pri"), fontSize: 10, padding: "5px 10px", borderRadius: 16 }}>
             Anwenden
           </button>
         </div>
@@ -1844,7 +1898,7 @@ Nur JSON:
 
       return (
         <div style={{ marginBottom: 16 }}>
-          <div style={S.lbl}>FÜLLSTAND</div>
+          <div className="lbl">FÜLLSTAND</div>
           <div style={{ display: "flex", gap: 6 }}>
             {FILL_LEVELS.map(level => {
               const active = current === level;
@@ -2106,16 +2160,18 @@ Nur JSON:
       // EDGE CASE: leere items/log → computeDNA gibt value:0 zurück → Chart zeigt Leer-Hinweis
       const dna = useMemo(() => computeDNA(items, log, weighted), [items, log, weighted]);
       return (
-        <div style={{ ...S.card, marginBottom: 12 }}>
+        <div className="card" style={{ marginBottom: 12 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-            <div style={S.lbl}>DUFT-DNA RADAR</div>
+            <div className="lbl">DUFT-DNA RADAR</div>
             <div style={{ display: "flex", gap: 6 }}>
               <button type="button" onClick={() => setWeighted(false)}
-                style={{ ...S.chip(!weighted, "#1A1A18"), fontSize: 10, padding: "4px 10px", transition: "all .2s" }}>
+                className="btn"
+                style={{ ...S.btn("out"), fontSize: 10, padding: "5px 10px", borderRadius: 16, color: "#E24B4A", borderColor: "#F09595" }}>
                 Sammlung
               </button>
               <button type="button" onClick={() => setWeighted(true)}
-                style={{ ...S.chip(weighted, "#1A1A18"), fontSize: 10, padding: "4px 10px", transition: "all .2s" }}>
+                className="btn"
+                style={{ ...S.btn("out"), fontSize: 10, padding: "5px 10px", borderRadius: 16, color: "#E24B4A", borderColor: "#F09595" }}>
                 Nutzung
               </button>
             </div>
@@ -2242,7 +2298,7 @@ Nur JSON:
             }}>{toast}</div>
           )}
 
-          <div style={{ ...S.card, background: "#F9F8F5", marginBottom: 12 }}>
+          <div className="card" style={{background: "#F9F8F5", marginBottom: 12 }}>
             <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 4 }}>Sammlung aufräumen</div>
             <div style={{ fontSize: 11, color: "#888780", lineHeight: 1.6 }}>
               Parfüms die du seit {DECLUTTER_DAYS} Tagen nicht getragen hast. Neu hinzugefügte Parfüms erscheinen erst nach {FORGOTTEN_NEW_DELAY_DAYS} Tagen.
@@ -2254,8 +2310,7 @@ Nur JSON:
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 6, marginBottom: 12 }}>
             {[["Ausprobieren", "#BA7517"], ["Verkaufen", "#534AB7"], ["Verschenken", "#993C1D"], ["Behalten", "#1D9E75"]].map(([l, c]) => (
               <button key={l} onClick={() => setFilter(filter === l ? "all" : l)}
-                style={{
-                  ...S.card, marginBottom: 0, padding: "8px 4px", textAlign: "center",
+                className="card" style={{marginBottom: 0, padding: "8px 4px", textAlign: "center",
                   border: `1px solid ${filter === l ? c : "#E8E6E0"}`, cursor: "pointer",
                   background: filter === l ? c + "11" : "#fff"
                 }}>
@@ -2279,20 +2334,19 @@ Nur JSON:
               : p._color;
             const effectiveLabel = userDec || p._suggestion;
             return (
-              <div key={p.id} style={{
-                ...S.card, padding: "12px 14px", marginBottom: 8,
+              <div key={p.id} className="card" style={{padding: "12px 14px", marginBottom: 8,
                 borderLeft: `3px solid ${effectiveColor}`,
                 transition: "all .4s cubic-bezier(0.25,.46,.45,.94)", transform: "translateY(0)",
                 boxShadow: "0 1px 3px rgba(26,26,24,0.04)"
               }}
-                onMouseEnter={function (e) { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = "0 6px 20px rgba(26,26,24,0.08)" }}
-                onMouseLeave={function (e) { e.currentTarget.style.transform = "translateY(0)"; e.currentTarget.style.boxShadow = "0 1px 3px rgba(26,26,24,0.04)" }}>
+                onMouseEnter={function (e) { e.currentTarget.style.setProperty('transform', 'translateY(-2px)'); e.currentTarget.style.setProperty('box-shadow', '0 6px 20px rgba(26,26,24,0.08)') }}
+                onMouseLeave={function (e) { e.currentTarget.style.setProperty('transform', 'translateY(0)'); e.currentTarget.style.setProperty('box-shadow', '0 1px 3px rgba(26,26,24,0.04)') }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <button type="button" onClick={() => onSelectPerfume && onSelectPerfume(p.id)} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontSize: 14, fontFamily: "inherit", color: "inherit", textAlign: "left", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "block", width: "100%" }}>{p.name}</button>
                     <div style={{ fontSize: 11, color: "#888780" }}>{p.house} · {p.format}</div>
                   </div>
-                  <span style={{ ...S.pill(effectiveColor), fontSize: 10, flexShrink: 0, marginLeft: 8 }}>{effectiveLabel}</span>
+                  <span className="pill" style={{ ...S.pill(effectiveColor), fontSize: 10, flexShrink: 0, marginLeft: 8 }}>{effectiveLabel}</span>
                 </div>
                 <div style={{ fontSize: 11, color: "#888780", marginBottom: 10, fontStyle: "italic" }}>{p._reason}</div>
 
@@ -2320,6 +2374,7 @@ Nur JSON:
                 {/* Remove button */}
                 {p._suggestion !== "Ausprobieren" && (
                   <button onClick={() => { if (confirm(`"${p.name}" wirklich entfernen?`)) { onDelete(p.id); saveDecision(p.id, "Entfernt"); } }}
+                    className="btn"
                     style={{ ...S.btn("out"), fontSize: 11, padding: "6px 10px", width: "100%", color: "#E24B4A", borderColor: "#F09595" }}>
                     Aus Sammlung entfernen
                   </button>
@@ -2334,6 +2389,7 @@ Nur JSON:
           })}
           {visible.length > declDisplayCount && (
             <button onClick={() => setDeclDisplayCount(c => c + 15)}
+              className="btn"
               style={{ ...S.btn("out"), width: "100%", fontSize: 12, padding: "12px", marginBottom: 8 }}>
               Mehr anzeigen ({visible.length - declDisplayCount} weitere)
             </button>
@@ -2428,7 +2484,7 @@ Nur JSON:
           body: (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 7 }}>
               {ONBOARD_FAMILIES.map(f => (
-                <button key={f.id} onClick={() => toggle(favFamilies, setFavFamilies, f.id)}
+                <button key={f.id} onClick={() => toggle(favFamilies, setFavFamilies, f.id)} className="chip"
                   style={{
                     ...S.chip(favFamilies.includes(f.id), "#534AB7"), padding: "10px 12px", borderRadius: 10,
                     display: "flex", alignItems: "center", gap: 8, textAlign: "left", fontSize: 12
@@ -2446,7 +2502,7 @@ Nur JSON:
           body: (
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
               {ONBOARD_OCC.map(o => (
-                <button key={o.id} onClick={() => toggle(occs, setOccs, o.id)}
+                <button key={o.id} onClick={() => toggle(occs, setOccs, o.id)} className="chip"
                   style={{
                     ...S.chip(occs.includes(o.id)), padding: "10px", borderRadius: 8,
                     textAlign: "center", fontSize: 12
@@ -2484,10 +2540,8 @@ Nur JSON:
             {steps[step].body}
             <div style={{ display: "flex", gap: 8, marginTop: 20 }}>
               {step > 0 && (
-                <button onClick={() => setStep(s => s - 1)} style={{
-                  ...S.btn("out"), flex: 1,
-                  transition: "all .3s cubic-bezier(0.25,.46,.45,.94)"
-                }}>Zurück</button>
+                <button onClick={() => setStep(s => s - 1)} className="btn"
+                style={{ ...S.btn("out"), flex: 1, transition: "all .3s cubic-bezier(0.25,.46,.45,.94)" }}>Zurück</button>
               )}
               {step < steps.length - 1 ? (
                 <button onClick={() => setStep(s => s + 1)} style={{
@@ -2508,8 +2562,8 @@ Nur JSON:
                 color: "#B4B2A9", background: "none", border: "none", cursor: "pointer", marginTop: 12,
                 transition: "color .2s"
               }}
-              onMouseEnter={function (e) { e.currentTarget.style.color = "#534AB7" }}
-              onMouseLeave={function (e) { e.currentTarget.style.color = "#B4B2A9" }}>
+              onMouseEnter={function (e) { e.currentTarget.style.setProperty('color', '#534AB7') }}
+              onMouseLeave={function (e) { e.currentTarget.style.setProperty('color', '#B4B2A9') }}>
               Überspringen
             </button>
           </div>
@@ -2701,14 +2755,14 @@ Nur JSON:
         : [];
       return (
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={S.lbl}>{label}</div>
+          <div className="lbl">{label}</div>
           <div style={{ position: "relative" }}>
             <input id={inputId} value={selectedP ? `${selectedP.name} – ${selectedP.house}` : search}
               onChange={e => { setSearch(e.target.value); setOpen(true); if (selected) setSelected(""); }}
               onFocus={() => setOpen(true)}
               onBlur={() => setTimeout(() => setOpen(false), 150)}
               placeholder="Parfüm suchen…"
-              style={{ ...S.inp, fontSize: 12 }} />
+              className="inp" style={{ ...S.inp, fontSize: 12 }} />
             {selectedP && (
               <button onClick={() => { setSelected(""); setSearch(""); }}
                 aria-label="Auswahl zurücksetzen"
@@ -2729,8 +2783,8 @@ Nur JSON:
                     <div key={p.id}
                       onMouseDown={e => { e.preventDefault(); setSelected(p.id); setSearch(""); setOpen(false); }}
                       style={{ padding: "8px 12px", fontSize: 12, cursor: "pointer", borderBottom: "1px solid #F1EFE8" }}
-                      onMouseEnter={e => e.currentTarget.style.background = "#F1EFE8"}
-                      onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                      onMouseEnter={e => e.currentTarget.style.setProperty('background', '#F1EFE8')}
+                      onMouseLeave={e => e.currentTarget.style.setProperty('background', 'transparent')}>
                       <div>{p.name}</div>
                       <div style={{ fontSize: 10, color: "#888780" }}>
                         {p.house} · {pFams.map((f, idx) => (
@@ -3011,14 +3065,14 @@ Nur JSON:
 
       return (
         <div>
-          <div style={{ ...S.card, background: "#F9F8F5", marginBottom: 12 }}>
+          <div className="card" style={{background: "#F9F8F5", marginBottom: 12 }}>
             <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 4 }}>Smart Match</div>
             <div style={{ fontSize: 11, color: "#888780", lineHeight: 1.6, marginBottom: 10 }}>
               Wähle ein Parfum – die App findet die besten Layer-Partner aus deiner Sammlung. Basiert auf Duftfamilien-Theorie &amp; Noten-Analyse.
             </div>
 
             {/* Parfum-Picker (aus der Sammlung) */}
-            <div style={S.lbl}>PARFUM WÄHLEN</div>
+            <div className="lbl">PARFUM WÄHLEN</div>
             <div style={{ position: "relative", marginBottom: 10 }}>
               <input
                 value={selectedP ? `${selectedP.name} – ${selectedP.house}` : search}
@@ -3026,7 +3080,7 @@ Nur JSON:
                 onFocus={() => setDropOpen(true)}
                 onBlur={() => setTimeout(() => setDropOpen(false), 150)}
                 placeholder="Parfum aus Sammlung suchen…"
-                style={{ ...S.inp, fontSize: 12 }} />
+                className="inp" style={{ ...S.inp, fontSize: 12 }} />
               {selectedP && (
                 <button onClick={() => { setSelId(""); setSearch(""); setResults(null); }}
                   aria-label="Auswahl zurücksetzen"
@@ -3045,8 +3099,8 @@ Nur JSON:
                       <div key={p.id}
                         onMouseDown={e => { e.preventDefault(); setSelId(p.id); setSearch(""); setDropOpen(false); setResults(null); }}
                         style={{ padding: "8px 12px", fontSize: 12, cursor: "pointer", borderBottom: "1px solid #F1EFE8" }}
-                        onMouseEnter={e => e.currentTarget.style.background = "#F1EFE8"}
-                        onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                        onMouseEnter={e => e.currentTarget.style.setProperty('background', '#F1EFE8')}
+                        onMouseLeave={e => e.currentTarget.style.setProperty('background', 'transparent')}>
                         <div>{p.name}</div>
                         <div style={{ fontSize: 10, color: "#888780" }}>
                           {p.house} · {pFams.map((f, i) => (
@@ -3082,17 +3136,17 @@ Nur JSON:
 
             {showManual && (
               <div style={{ marginBottom: 10 }}>
-                <div style={S.lbl}>WEITERE DUFTFAMILIEN <span style={{ fontWeight: 400, color: "#AAA" }}>(Stichwörter)</span></div>
+                <div className="lbl">WEITERE DUFTFAMILIEN <span style={{ fontWeight: 400, color: "#AAA" }}>(Stichwörter)</span></div>
                 <input value={manualFamText} onChange={e => setManualFamText(e.target.value)}
                   placeholder="z.B. woody oriental, fresh citrus…"
-                  style={{ ...S.inp, marginBottom: 8 }} />
+                  className="inp" style={{ ...S.inp, marginBottom: 8 }} />
                 <div style={{ fontSize: 9, color: "#AAA", marginBottom: 8, lineHeight: 1.6 }}>
                   {KNOWN_FAMILIES.join(" · ")}
                 </div>
-                <div style={S.lbl}>NOTEN <span style={{ fontWeight: 400, color: "#AAA" }}>(kommagetrennt)</span></div>
+                <div className="lbl">NOTEN <span style={{ fontWeight: 400, color: "#AAA" }}>(kommagetrennt)</span></div>
                 <input value={manualNoteText} onChange={e => setManualNoteText(e.target.value)}
                   placeholder="z.B. Bergamotte, Ambra, Vetiver, Vanille…"
-                  style={{ ...S.inp }} />
+                  className="inp" style={{ ...S.inp }} />
               </div>
             )}
 
@@ -3111,7 +3165,7 @@ Nur JSON:
           {/* Results */}
           {results && (
             <div>
-              <div style={{ ...S.card, background: "#F9F8F5", marginBottom: 10 }}>
+              <div className="card" style={{background: "#F9F8F5", marginBottom: 10 }}>
                 <div style={{ fontSize: 11, color: "#888780", marginBottom: 4 }}>
                   {selectedP ? `Layering-Partner für ${selectedP.name}:` : "Erkannte Familien:"}
                 </div>
@@ -3139,7 +3193,7 @@ Nur JSON:
                 const medal = idx === 0 ? "🥇" : idx === 1 ? "🥈" : idx === 2 ? "🥉" : null;
                 const hasNoteData = sharedCount !== undefined;
                 return (
-                  <div key={p.id} style={{ ...S.card, marginBottom: 8, borderLeft: `3px solid ${cc}`, opacity: score < 0.4 ? 0.6 : 1 }}>
+                  <div key={p.id} className="card" style={{marginBottom: 8, borderLeft: `3px solid ${cc}`, opacity: score < 0.4 ? 0.6 : 1 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 2 }}>
@@ -3274,7 +3328,7 @@ Nur JSON:
           {mode === "smartmatch" && <SmartMatchMode items={items} />}
           {mode === "analyse" && <div>
 
-          <div style={{ ...S.card, background: "#F9F8F5", marginBottom: 12 }}>
+          <div className="card" style={{background: "#F9F8F5", marginBottom: 12 }}>
             <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 4 }}>Layering-Analyse</div>
             <div style={{ fontSize: 11, color: "#888780", lineHeight: 1.6 }}>
               Wähle zwei Parfüms – die App analysiert wie gut sie sich kombinieren lassen.
@@ -3294,7 +3348,7 @@ Nur JSON:
 
           {/* Same-perfume warning */}
           {isSamePerfume && (
-            <div style={{ ...S.card, border: "1px solid #BA751744", background: "#FFF8EE", marginBottom: 12 }}>
+            <div className="card" style={{border: "1px solid #BA751744", background: "#FFF8EE", marginBottom: 12 }}>
               <div style={{ fontSize: 13, color: "#BA7517" }}>Bitte zwei <em>verschiedene</em> Parfüms wählen – Layering mit sich selbst ergibt keine sinnvolle Analyse.</div>
             </div>
           )}
@@ -3303,7 +3357,7 @@ Nur JSON:
           {p1 && p2 && !isSamePerfume && compat && noteAna && (
             <div>
               {/* Compatibility score */}
-              <div style={{ ...S.card, marginBottom: 12, borderLeft: `3px solid ${compatColor}` }}>
+              <div className="card" style={{marginBottom: 12, borderLeft: `3px solid ${compatColor}` }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
                   <div style={{ fontSize: 15, fontWeight: 500 }}>{compat.label}</div>
                   <div style={{ fontSize: 22, color: compatColor, fontWeight: 400 }}>
@@ -3324,12 +3378,12 @@ Nur JSON:
 
               {/* Family cards – show all families, not just primary */}
               <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", gap: 8, marginBottom: 12, alignItems: "center" }}>
-                <div style={{ ...S.card, marginBottom: 0, textAlign: "center", padding: "10px" }}>
+                <div className="card" style={{marginBottom: 0, textAlign: "center", padding: "10px" }}>
                   <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 2 }}>{p1.name}</div>
                   <FamilyPills p={p1} />
                 </div>
                 <div style={{ fontSize: 14, color: "#B4B2A9", textAlign: "center" }}>+</div>
-                <div style={{ ...S.card, marginBottom: 0, textAlign: "center", padding: "10px" }}>
+                <div className="card" style={{marginBottom: 0, textAlign: "center", padding: "10px" }}>
                   <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 2 }}>{p2.name}</div>
                   <FamilyPills p={p2} />
                 </div>
@@ -3337,7 +3391,7 @@ Nur JSON:
 
               {/* Missing notes hint */}
               {(!noteAna.hasP1Notes || !noteAna.hasP2Notes) && (
-                <div style={{ ...S.card, background: "#FFFBF0", border: "1px solid #E8E6E044", marginBottom: 12 }}>
+                <div className="card" style={{background: "#FFFBF0", border: "1px solid #E8E6E044", marginBottom: 12 }}>
                   <div style={{ fontSize: 11, color: "#888780" }}>
                     ⓘ {!noteAna.hasP1Notes && !noteAna.hasP2Notes
                       ? "Für beide Parfüms sind keine Noten hinterlegt"
@@ -3349,8 +3403,8 @@ Nur JSON:
 
               {/* Bridge notes */}
               {noteAna.bridgeNotes.length > 0 && (
-                <div style={{ ...S.card, marginBottom: 12 }}>
-                  <div style={S.lbl}>BRÜCKEN-NOTEN (was du wirklich riechst)</div>
+                <div className="card" style={{marginBottom: 12 }}>
+                  <div className="lbl">BRÜCKEN-NOTEN (was du wirklich riechst)</div>
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                     {noteAna.bridgeNotes.map(n => (
                       <span key={n} style={{ ...S.pill("#534AB7"), fontSize: 11, padding: "3px 9px" }}>{n}</span>
@@ -3364,8 +3418,8 @@ Nur JSON:
 
               {/* Shared notes */}
               {noteAna.shared.length > 0 && (
-                <div style={{ ...S.card, marginBottom: 12 }}>
-                  <div style={S.lbl}>GEMEINSAME NOTEN ({noteAna.shared.length})</div>
+                <div className="card" style={{marginBottom: 12 }}>
+                  <div className="lbl">GEMEINSAME NOTEN ({noteAna.shared.length})</div>
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                     {noteAna.shared.slice(0, 10).map(n => (
                       <span key={n} style={{ ...S.pill("#1D9E75"), fontSize: 11, padding: "3px 9px" }}>{n}</span>
@@ -3381,8 +3435,8 @@ Nur JSON:
               )}
 
               {/* Application tip */}
-              <div style={{ ...S.card, background: "#F9F8F5" }}>
-                <div style={S.lbl}>ANWENDUNGS-TIPP</div>
+              <div className="card" style={{ background: "#F9F8F5" }}>
+                <div className="lbl">ANWENDUNGS-TIPP</div>
                 <div style={{ fontSize: 12, color: "#888780", lineHeight: 1.6 }}>
                   {buildApplicationTip(p1, p2, compat)}
                 </div>
@@ -3606,7 +3660,7 @@ Antworte NUR mit JSON: {"occasion":"...","mood":"...","timeOfDay":"...","intensi
       const Sec = ({ id, lbl, children }) => (
         <div style={{ marginBottom: 16 }}>
           <div onClick={() => tog(id)} style={{ display: "flex", justifyContent: "space-between", cursor: "pointer", marginBottom: 8 }}>
-            <div style={S.lbl}>{lbl}</div>
+            <div className="lbl">{lbl}</div>
             <div style={{ fontSize: 10, color: "#888780" }}>{open[id] ? "▲" : "▼"}</div>
           </div>
           {open[id] && children}
@@ -3633,7 +3687,7 @@ Antworte NUR mit JSON: {"occasion":"...","mood":"...","timeOfDay":"...","intensi
             : "1px solid #E8E6E0";
 
         return (
-          <div style={{ ...S.card, border: borderStyle, marginBottom: 10, padding: "12px 14px" }}>
+          <div className="card" style={{border: borderStyle, marginBottom: 10, padding: "12px 14px" }}>
             {/* Rang-Badge */}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -3666,7 +3720,7 @@ Antworte NUR mit JSON: {"occasion":"...","mood":"...","timeOfDay":"...","intensi
               <div style={{ marginLeft: 12, textAlign: "center", flexShrink: 0 }}>
                 {wornNow || wornToday
                   ? <div style={{ fontSize: 11, color: "#1D9E75" }}>✓ getragen</div>
-                  : <button onClick={e => wear(p, e.currentTarget)} style={{ ...S.btn("out"), fontSize: 11, padding: "6px 10px" }}>Tragen</button>
+                  : <button onClick={e => wear(p, e.currentTarget)} className="btn" style={{ ...S.btn("out"), fontSize: 11, padding: "6px 10px" }}>Tragen</button>
                 }
               </div>
             </div>
@@ -3677,7 +3731,7 @@ Antworte NUR mit JSON: {"occasion":"...","mood":"...","timeOfDay":"...","intensi
       return (
         <div>
           {/* Datum/Saison-Karte */}
-          <div style={{ ...S.card, background: sc.bg, border: `1px solid ${sc.accent}33`, marginBottom: 16 }}>
+          <div className="card" style={{background: sc.bg, border: `1px solid ${sc.accent}33`, marginBottom: 16 }}>
             <div style={{ fontSize: 10, letterSpacing: "1.5px", color: sc.text, marginBottom: 3 }}>
               {new Date().toLocaleDateString("de-DE", { weekday: "long", day: "numeric", month: "long" }).toUpperCase()}
             </div>
@@ -3685,9 +3739,9 @@ Antworte NUR mit JSON: {"occasion":"...","mood":"...","timeOfDay":"...","intensi
           </div>
 
           {/* Wetter-Widget */}
-          <div style={{ ...S.card, marginBottom: 12, padding: "10px 14px" }}>
+          <div className="card" style={{marginBottom: 12, padding: "10px 14px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: weatherData ? 8 : 0 }}>
-              <div style={S.lbl}>WETTER AUTOMATISCH ERKENNEN</div>
+              <div className="lbl">WETTER AUTOMATISCH ERKENNEN</div>
               <button onClick={fetchAutoWeather} disabled={weatherLoading}
                 style={{
                   ...S.btn("out"), fontSize: 10, padding: "5px 10px", borderRadius: 16,
@@ -3702,10 +3756,10 @@ Antworte NUR mit JSON: {"occasion":"...","mood":"...","timeOfDay":"...","intensi
 
           <Sec id="crit" lbl="KRITERIEN">
             <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-              <div><div style={S.lbl}>STIMMUNG</div>
+              <div><div className="lbl">STIMMUNG</div>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8 }}>
                   {MOODS.map(m => (
-                    <button key={m.id} onClick={() => setMood(m.id)}
+                    <button key={m.id} onClick={() => setMood(m.id)} className="chip"
                       style={{ ...S.chip(mood === m.id), padding: "10px 6px", textAlign: "center", borderRadius: 10 }}>
                       <div style={{ fontSize: 16, marginBottom: 2 }}>{m.icon}</div>
                       <div style={{ fontSize: 10 }}>{m.label}</div>
@@ -3714,22 +3768,24 @@ Antworte NUR mit JSON: {"occasion":"...","mood":"...","timeOfDay":"...","intensi
                 </div>
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
-                <div><div style={S.lbl}>TAGESZEIT</div>
+                <div><div className="lbl">TAGESZEIT</div>
                   <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                     {TIMES.map(t => (
-                      <button key={t.id} onClick={() => setTime(t.id)} style={{ ...S.chip(timeOfDay === t.id), padding: "6px 10px", fontSize: 11 }}>{t.label}</button>
+                      <button key={t.id} onClick={() => setTime(t.id)} className="chip"
+                      style={{ ...S.chip(timeOfDay === t.id), padding: "6px 10px", fontSize: 11 }}>{t.label}</button>
                     ))}
                   </div>
                 </div>
-                <div><div style={S.lbl}>WETTER</div>
+                <div><div className="lbl">WETTER</div>
                   <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                     {WEATHERS.map(w => (
-                      <button key={w.id} onClick={() => setWeather(w.id)} style={{ ...S.chip(weather === w.id), padding: "6px 10px", fontSize: 11 }}>{w.label}</button>
+                      <button key={w.id} onClick={() => setWeather(w.id)} className="chip"
+                      style={{ ...S.chip(weather === w.id), padding: "6px 10px", fontSize: 11 }}>{w.label}</button>
                     ))}
                   </div>
                 </div>
               </div>
-              <div><div style={S.lbl}>ANLASS</div>
+              <div><div className="lbl">ANLASS</div>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 6 }}>
                   {OCCASIONS.map(o => (
                     <button key={o.id} onClick={() => setOccasion(o.id)}
@@ -3741,20 +3797,22 @@ Antworte NUR mit JSON: {"occasion":"...","mood":"...","timeOfDay":"...","intensi
                 </div>
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                <div><div style={S.lbl}>INTENSITÄT</div>
+                <div><div className="lbl">INTENSITÄT</div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                     {INTENSITIES.map(i => (
                       <button key={i.id} onClick={() => setIntensity(i.id)}
+                        className="chip"
                         style={{ ...S.chip(intensityPref === i.id), display: "flex", justifyContent: "space-between", borderRadius: 8, padding: "8px 12px" }}>
                         <span>{i.label}</span><span style={{ fontSize: 9, opacity: .7 }}>{i.note}</span>
                       </button>
                     ))}
                   </div>
                 </div>
-                <div><div style={S.lbl}>HALTBARKEIT</div>
+                <div><div className="lbl">HALTBARKEIT</div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                     {LONGEVITIES.map(l => (
                       <button key={l.id} onClick={() => setLongevity(l.id)}
+                        className="chip"
                         style={{ ...S.chip(longevityPref === l.id), display: "flex", justifyContent: "space-between", borderRadius: 8, padding: "8px 12px" }}>
                         <span>{l.label}</span><span style={{ fontSize: 9, opacity: .7 }}>{l.note}</span>
                       </button>
@@ -3768,10 +3826,11 @@ Antworte NUR mit JSON: {"occasion":"...","mood":"...","timeOfDay":"...","intensi
             <div style={{ marginTop: 12 }}>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                 <div>
-                  <div style={S.lbl}>PREISBEREICH (optional)</div>
+                  <div className="lbl">PREISBEREICH (optional)</div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                     {[["budget","Budget","< 30€"],["mid","Mittel","30–100€"],["luxury","Luxus","> 100€"]].map(([id,label,note]) => (
                       <button key={id} onClick={() => setPriceRange(priceRange === id ? null : id)}
+                        className="chip"
                         style={{ ...S.chip(priceRange === id, "#BA7517"), display: "flex", justifyContent: "space-between", borderRadius: 8, padding: "6px 10px", fontSize: 11 }}>
                         <span>{label}</span><span style={{ fontSize: 9, opacity: .7 }}>{note}</span>
                       </button>
@@ -3779,11 +3838,12 @@ Antworte NUR mit JSON: {"occasion":"...","mood":"...","timeOfDay":"...","intensi
                   </div>
                 </div>
                 <div>
-                  <div style={S.lbl}>GENDER (optional)</div>
+                  <div className="lbl">GENDER (optional)</div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                     {[["Feminin","♀"],["Maskulin","♂"],["Unisex","⚥"]].map(([id,icon]) => (
                       <button key={id} onClick={() => setGenderPref(genderPref === id ? null : id)}
-                        style={{ ...S.chip(genderPref === id, "#185FA5"), display: "flex", gap: 6, borderRadius: 8, padding: "6px 10px", fontSize: 11, alignItems: "center" }}>
+                        className="chip"
+                        style={{ display: "flex", gap: 6, borderRadius: 8, padding: "6px 10px", fontSize: 11, alignItems: "center" }}>
                         <span style={{ fontSize: 12 }}>{icon}</span><span>{id}</span>
                       </button>
                     ))}
@@ -3794,7 +3854,7 @@ Antworte NUR mit JSON: {"occasion":"...","mood":"...","timeOfDay":"...","intensi
           </Sec>
 
           {/* ── KI-Tagesbeschreibung ─────────────────────────────────── */}
-          <div style={{ ...S.card, marginBottom: 12, padding: "14px 16px", borderRadius: 14,
+          <div className="card" style={{marginBottom: 12, padding: "14px 16px", borderRadius: 14,
             background: showAiInput ? "#F4F3FD" : "#fff",
             border: showAiInput ? "1.5px solid #534AB7" : "1px solid #E8E6E0",
             transition: "all .2s" }}>
@@ -3840,7 +3900,7 @@ Antworte NUR mit JSON: {"occasion":"...","mood":"...","timeOfDay":"...","intensi
                     onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); handleAiGenerate(); } }}
                     placeholder='z.B. "Abendessen mit Freunden" oder "langer Arbeitstag"'
                     autoFocus
-                    style={{ ...S.inp, flex: 1, fontSize: 13, borderRadius: 10,
+                    className="inp" style={{ ...S.inp, flex: 1, fontSize: 13, borderRadius: 10,
                       border: "1.5px solid #534AB7", background: "#fff" }}
                   />
                   <button onClick={handleAiGenerate} disabled={aiLoading || !aiText.trim()}
@@ -3874,7 +3934,7 @@ Antworte NUR mit JSON: {"occasion":"...","mood":"...","timeOfDay":"...","intensi
             <div>
               {/* KI-Reasoning Banner */}
               {recs._aiReasoning && (
-                <div style={{ ...S.card, background: "#F4F3FD", border: "1px solid #534AB722",
+                <div className="card" style={{background: "#F4F3FD", border: "1px solid #534AB722",
                   marginBottom: 12, padding: "10px 14px", display: "flex", alignItems: "center", gap: 8 }}>
                   <span style={{ fontSize: 14, flexShrink: 0 }}>✦</span>
                   <div style={{ flex: 1 }}>
@@ -4198,7 +4258,7 @@ Antworte NUR mit JSON: {"occasion":"...","mood":"...","timeOfDay":"...","intensi
             {/* Header */}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
               <div>
-                <div style={{ ...S.lbl, marginBottom: 2 }}>COST PER WEAR</div>
+                <div className="lbl" style={{marginBottom: 2 }}>COST PER WEAR</div>
                 <div style={{ fontSize: 14, color: "#1A1A18", fontFamily: "'Georgia',serif" }}>{perfumeName}</div>
               </div>
               <button onClick={onClose} aria-label="Modal schließen"
@@ -4217,14 +4277,14 @@ Antworte NUR mit JSON: {"occasion":"...","mood":"...","timeOfDay":"...","intensi
                     <input id="detail-price" type="number" min="0" step="0.01" value={price}
                       onChange={e => setPrice(e.target.value)}
                       onKeyDown={e => e.key === "Enter" && handleSave()}
-                      placeholder="0.00" style={{ ...S.inp, fontSize: 13 }} />
+                      placeholder="0.00" className="inp" style={{ ...S.inp, fontSize: 13 }} />
                   </div>
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: 10, color: "#888780", marginBottom: 4 }}>Größe ml</div>
                     <input id="detail-size" type="number" min="1" step="1" value={ml}
                       onChange={e => setMl(e.target.value)}
                       onKeyDown={e => e.key === "Enter" && handleSave()}
-                      placeholder="100" style={{ ...S.inp, fontSize: 13 }} />
+                      placeholder="100" className="inp" style={{ ...S.inp, fontSize: 13 }} />
                   </div>
                 </div>
                 <button onClick={handleSave}
@@ -4256,15 +4316,15 @@ Antworte NUR mit JSON: {"occasion":"...","mood":"...","timeOfDay":"...","intensi
                 }}>
                   <div style={{ textAlign: "center" }}>
                     <div style={{ fontSize: 16, color: "#1A1A18" }}>{(+data.price || 0).toFixed(2)} €</div>
-                    <div style={{ ...S.lbl, marginBottom: 0 }}>GESAMTPREIS</div>
+                    <div className="lbl" style={{marginBottom: 0 }}>GESAMTPREIS</div>
                   </div>
                   <div style={{ textAlign: "center" }}>
                     <div style={{ fontSize: 16, color: "#1A1A18" }}>{costPerSpray.toFixed(3)} €</div>
-                    <div style={{ ...S.lbl, marginBottom: 0 }}>PRO SPRAY</div>
+                    <div className="lbl" style={{marginBottom: 0 }}>PRO SPRAY</div>
                   </div>
                   <div style={{ textAlign: "center" }}>
                     <div style={{ fontSize: 16, color: "#1A1A18" }}>{data.ml} ml</div>
-                    <div style={{ ...S.lbl, marginBottom: 0 }}>FLAKON</div>
+                    <div className="lbl" style={{marginBottom: 0 }}>FLAKON</div>
                   </div>
                 </div>
 
@@ -4407,8 +4467,8 @@ Antworte NUR mit JSON: {"occasion":"...","mood":"...","timeOfDay":"...","intensi
                 color: expanded ? "#534AB7" : "#B4B2A9", lineHeight: 1, padding: 0,
                 transition: "all .15s", flexShrink: 0, boxSizing: "content-box"
               }}
-              onMouseEnter={function (e) { e.currentTarget.style.borderColor = "#534AB7"; e.currentTarget.style.color = "#534AB7" }}
-              onMouseLeave={function (e) { e.currentTarget.style.borderColor = "#D3D1C7"; e.currentTarget.style.color = expanded ? "#534AB7" : "#B4B2A9" }}>
+              onMouseEnter={function (e) { e.currentTarget.style.setProperty('border-color', '#534AB7'); e.currentTarget.style.setProperty('color', '#534AB7') }}
+              onMouseLeave={function (e) { e.currentTarget.style.setProperty('border-color', '#D3D1C7'); e.currentTarget.style.setProperty('color', expanded ? '#534AB7' : '#B4B2A9') }}>
               i
             </button>
           </div>
@@ -4566,7 +4626,7 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
       if (!name) return null;
 
       return (
-        <div style={{ ...S.card, marginBottom: 12 }}>
+        <div className="card" style={{marginBottom: 12 }}>
           <button onClick={handleLoad} aria-expanded={expanded}
             style={{
               background: "none", border: "none", cursor: "pointer", width: "100%",
@@ -4574,7 +4634,7 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
             }}>
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <span style={{ fontSize: 14 }} aria-hidden="true">✦</span>
-              <div style={S.lbl}>FUN FACTS</div>
+              <div className="lbl">FUN FACTS</div>
             </div>
             <span style={{
               fontSize: 12, color: "#B4B2A9", transition: "transform .2s",
@@ -4655,8 +4715,8 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
                 fontSize: 12, fontWeight: 500, transition: "all .3s cubic-bezier(0.25,.46,.45,.94)",
                 transform: "translateY(0)", boxShadow: "0 2px 8px rgba(29,185,84,0.3)"
               }}
-              onMouseEnter={function (e) { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = "0 4px 15px rgba(29,185,84,0.4)" }}
-              onMouseLeave={function (e) { e.currentTarget.style.transform = "translateY(0)"; e.currentTarget.style.boxShadow = "0 2px 8px rgba(29,185,84,0.3)" }}>
+              onMouseEnter={function (e) { e.currentTarget.style.setProperty('transform', 'translateY(-2px)'); e.currentTarget.style.setProperty('box-shadow', '0 4px 15px rgba(29,185,84,0.4)') }}
+              onMouseLeave={function (e) { e.currentTarget.style.setProperty('transform', 'translateY(0)'); e.currentTarget.style.setProperty('box-shadow', '0 2px 8px rgba(29,185,84,0.3)') }}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false">
                 <path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z" />
               </svg>
@@ -4667,8 +4727,8 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
                 background: "none", border: "none", cursor: "pointer", fontSize: 10, color: "#B4B2A9",
                 padding: "8px 0 0 2px", marginLeft: 4, transition: "color .12s"
               }}
-              onMouseEnter={function (e) { e.currentTarget.style.color = "#534AB7" }}
-              onMouseLeave={function (e) { e.currentTarget.style.color = "#B4B2A9" }}>
+              onMouseEnter={function (e) { e.currentTarget.style.setProperty('color', '#534AB7') }}
+              onMouseLeave={function (e) { e.currentTarget.style.setProperty('color', '#B4B2A9') }}>
               ändern
             </button>
           </div>
@@ -4685,8 +4745,8 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
               color: "#B4B2A9", fontSize: 12, cursor: "pointer",
               transition: "all .15s", fontFamily: "'Georgia',serif"
             }}
-            onMouseEnter={function (e) { e.currentTarget.style.borderColor = "#1DB954"; e.currentTarget.style.color = "#1DB954"; }}
-            onMouseLeave={function (e) { e.currentTarget.style.borderColor = "#D3D1C7"; e.currentTarget.style.color = "#B4B2A9"; }}>
+            onMouseEnter={function (e) { e.currentTarget.style.setProperty('border-color', '#1DB954'); e.currentTarget.style.setProperty('color', '#1DB954'); }}
+            onMouseLeave={function (e) { e.currentTarget.style.setProperty('border-color', '#D3D1C7'); e.currentTarget.style.setProperty('color', '#B4B2A9'); }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" opacity=".5" aria-hidden="true" focusable="false">
               <path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z" />
             </svg>
@@ -4733,7 +4793,7 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
             onClick={function (e) { e.stopPropagation() }}>
 
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-              <div style={{ ...S.lbl, marginBottom: 0 }}>DUFTDATEN BEARBEITEN</div>
+              <div className="lbl" style={{marginBottom: 0 }}>DUFTDATEN BEARBEITEN</div>
               <button onClick={onClose} aria-label="Modal schließen"
                 style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18, color: "#B4B2A9", padding: 4 }}>✕</button>
             </div>
@@ -4741,7 +4801,7 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
             <div style={{ marginBottom: 12 }}>
               <label htmlFor="note-house" style={{ fontSize: 10, color: "#888780", marginBottom: 4, display: "block" }}>Haus / Marke</label>
               <input id="note-house" value={local.house || ""} onChange={e => setField("house", e.target.value)}
-                placeholder="z.B. Bon Parfumeur" style={{ ...S.inp, fontSize: 12 }} />
+                placeholder="z.B. Bon Parfumeur" className="inp" style={{ ...S.inp, fontSize: 12 }} />
             </div>
 
             <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
@@ -4793,7 +4853,7 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
               <div style={{ flex: 1 }}>
                 <label htmlFor="note-season" style={{ fontSize: 10, color: "#888780", marginBottom: 4, display: "block" }}>Saison</label>
                 <select id="note-season" value={local.season || "Ganzjährig"} onChange={e => setField("season", e.target.value)}
-                  style={{ ...S.inp, fontSize: 12, padding: "8px", width: "100%" }}>
+                  className="inp" style={{ ...S.inp, fontSize: 12, padding: "8px", width: "100%" }}>
                   {SEASONS.map(s => <option key={s}>{s}</option>)}
                 </select>
               </div>
@@ -4803,7 +4863,7 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
               <div key={key} style={{ marginBottom: 10 }}>
                 <label htmlFor={`note-${key}`} style={{ fontSize: 10, color: "#888780", marginBottom: 4, display: "block" }}>{label}</label>
                 <textarea id={`note-${key}`} value={local[key] || ""} onChange={e => setField(key, e.target.value)}
-                  style={{ ...S.ta, minHeight: 52, fontSize: 12 }} />
+                  className="ta" style={{ ...S.ta, minHeight: 52, fontSize: 12 }} />
               </div>
             ))}
 
@@ -4812,7 +4872,7 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
                 <label htmlFor="note-tag-input" style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0,0,0,0)" }}>Tag eingeben</label>
                 <input id="note-tag-input" value={noteInput} onChange={e => setNoteInput(e.target.value)}
                   onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addTag(); } }}
-                  placeholder="Tag hinzufügen…" style={{ ...S.inp, flex: 1, fontSize: 12 }} />
+                  placeholder="Tag hinzufügen…" className="inp" style={{ ...S.inp, flex: 1, fontSize: 12 }} />
                 <button onClick={addTag} aria-label="Tag hinzufügen" style={{ ...S.btn("pri"), padding: "8px 12px" }}>+</button>
               </div>
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }} role="list" aria-label="Notiz-Tags">
@@ -4829,7 +4889,7 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
             <div style={{ borderTop: "1px solid #F1EFE8", paddingTop: 10, marginBottom: 12 }}>
               <div style={{ fontSize: 10, color: "#888780", marginBottom: 4 }}>Spotify-URL (Track oder Playlist)</div>
               <input id="note-spotify" value={local.spotify_url || ""} onChange={e => setField("spotify_url", e.target.value)}
-                placeholder="https://open.spotify.com/track/…" style={{ ...S.inp, fontSize: 12 }} />
+                placeholder="https://open.spotify.com/track/…" className="inp" style={{ ...S.inp, fontSize: 12 }} />
             </div>
 
             <button onClick={handleSave} style={{ ...S.btn("pri"), width: "100%", fontSize: 13, padding: "10px" }}>
@@ -4851,8 +4911,8 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
             padding: "6px 10px", fontSize: 11, fontFamily: "'Georgia',serif", color: "#888780",
             display: "inline-flex", alignItems: "center", gap: 4, transition: "all .12s"
           }}
-          onMouseEnter={function (e) { e.currentTarget.style.borderColor = "#BA7517"; e.currentTarget.style.color = "#BA7517"; }}
-          onMouseLeave={function (e) { e.currentTarget.style.borderColor = "#D3D1C7"; e.currentTarget.style.color = "#888780"; }}>
+          onMouseEnter={function (e) { e.currentTarget.style.setProperty('border-color', '#BA7517'); e.currentTarget.style.setProperty('color', '#BA7517'); }}
+          onMouseLeave={function (e) { e.currentTarget.style.setProperty('border-color', '#D3D1C7'); e.currentTarget.style.setProperty('color', '#888780'); }}>
           {data ? (
             <>{cpw !== null ? `${cpw} €/Trag` : `${(+data.price || 0).toFixed(2)} €`} · {data.ml}ml</>
           ) : (
@@ -5104,11 +5164,11 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
           </div>
 
           <MoodHeader family={local.family} base={local.base} />
-          <div style={{ ...S.card, marginBottom: 10 }}>
+          <div className="card" style={{marginBottom: 10 }}>
             <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "flex-start" }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <input value={local.name || ""} onChange={e => setFieldLocal("name", e.target.value)} onBlur={() => commitField("name")}
-                  style={{ ...S.inp, fontSize: 16, fontWeight: 500, marginBottom: 6 }} />
+                  className="inp" style={{ ...S.inp, fontSize: 16, fontWeight: 500, marginBottom: 6 }} />
                 <BrandInfo house={local.house} />
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8, marginBottom: 8 }}>
                   <span style={S.pill("#534AB7")}>{local.conc || "?"}</span>
@@ -5183,16 +5243,16 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
 
           <FunFactsCard name={local.name} house={local.house} top={local.top} middle={local.middle} base={local.base} conc={local.conc} family={local.family} season={local.season} gender={local.gender} />
 
-          <div style={{ ...S.card, marginBottom: 10 }}>
+          <div className="card" style={{marginBottom: 10 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-              <div style={S.lbl}>DETAILS & NOTIZEN</div>
+              <div className="lbl">DETAILS & NOTIZEN</div>
               <button onClick={() => openOverlay(setShowNotes)} aria-label="Details bearbeiten"
                 style={{
                   background: "none", border: "none", cursor: "pointer", fontSize: 14, color: "#B4B2A9", padding: 2,
                   transition: "color .12s"
                 }}
-                onMouseEnter={function (e) { e.currentTarget.style.color = "#534AB7" }}
-                onMouseLeave={function (e) { e.currentTarget.style.color = "#B4B2A9" }}
+                onMouseEnter={function (e) { e.currentTarget.style.setProperty('color', '#534AB7') }}
+                onMouseLeave={function (e) { e.currentTarget.style.setProperty('color', '#B4B2A9') }}
                 title="Bearbeiten">✎</button>
             </div>
             {/* Familie + Saison */}
@@ -5214,7 +5274,7 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
                 <div key={label} style={{ marginBottom: 12 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 6 }}>
                     <span style={{ fontSize: 14, color }} aria-hidden="true">{icon}</span>
-                    <span style={{ ...S.lbl, marginBottom: 0, textTransform: "uppercase" }}>{label}</span>
+                    <span className="lbl" style={{marginBottom: 0, textTransform: "uppercase" }}>{label}</span>
                   </div>
                   <div style={{ display: "flex", gap: 6, flexWrap: "wrap", paddingLeft: 1 }}>
                     {n.map((x, i) => <span key={i} style={{
@@ -5244,8 +5304,8 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
                 background: "none", border: "none", cursor: "pointer", fontSize: 11, color: "#888780",
                 fontFamily: "'Georgia',serif", transition: "color .15s"
               }}
-              onMouseEnter={function (e) { e.currentTarget.style.color = "#534AB7" }}
-              onMouseLeave={function (e) { e.currentTarget.style.color = "#888780" }}>
+              onMouseEnter={function (e) { e.currentTarget.style.setProperty('color', '#534AB7') }}
+              onMouseLeave={function (e) { e.currentTarget.style.setProperty('color', '#888780') }}>
               ✎ Notizbuch
             </button>
             <span style={{ color: "#D3D1C7", margin: "0 8px" }}>·</span>
@@ -5254,8 +5314,8 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
                 background: "none", border: "none", cursor: "pointer", fontSize: 11, color: "#C8C6BE",
                 fontFamily: "'Georgia',serif", transition: "color .15s"
               }}
-              onMouseEnter={function (e) { e.currentTarget.style.color = "#E24B4A" }}
-              onMouseLeave={function (e) { e.currentTarget.style.color = "#C8C6BE" }}>
+              onMouseEnter={function (e) { e.currentTarget.style.setProperty('color', '#E24B4A') }}
+              onMouseLeave={function (e) { e.currentTarget.style.setProperty('color', '#C8C6BE') }}>
               Löschen
             </button>
           </div>
@@ -5274,13 +5334,13 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
               }}
                 onClick={function (e) { e.stopPropagation() }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-                  <div style={{ ...S.lbl, marginBottom: 0 }}>NOTIZBUCH</div>
+                  <div className="lbl" style={{marginBottom: 0 }}>NOTIZBUCH</div>
                   <button onClick={() => { setJournalText(local.journal || ""); setShowJournal(false) }} aria-label="Schließen"
                     style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18, color: "#B4B2A9", padding: 4 }}>✕</button>
                 </div>
                 <textarea value={journalText} onChange={e => setJournalText(e.target.value)}
                   placeholder="Deine Gedanken, Eindrücke, Erinnerungen..."
-                  style={{ ...S.ta, minHeight: 200, fontSize: 14, lineHeight: 1.7, padding: "12px" }} />
+                  className="ta" style={{ ...S.ta, minHeight: 200, fontSize: 14, lineHeight: 1.7, padding: "12px" }} />
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 12 }}>
                   <span style={{ fontSize: 10, color: "#888780" }}>{journalText.length} Zeichen</span>
                   <button onClick={() => { onUpdate(perfume.id, { journal: journalText }); setShowJournal(false) }}
@@ -5379,13 +5439,12 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
           role="button" tabIndex={0}
           aria-label={`${p.name} – ${p.house}, ${p.conc || "?"}, ${p.family || "Sonstiges"}${p.rating > 0 ? ", " + p.rating + " Sterne" : ""}`}
           onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(); } }}
-          style={{
-            ...S.card, cursor: "pointer", padding: "11px 14px", marginBottom: 8,
+          className="card" style={{cursor: "pointer", padding: "11px 14px", marginBottom: 8,
             transition: "all .4s cubic-bezier(0.25,.46,.45,.94)", transform: "translateY(0)",
             boxShadow: "0 1px 3px rgba(26,26,24,0.04)"
           }}
-          onMouseEnter={function (e) { e.currentTarget.style.transform = "translateY(-3px)"; e.currentTarget.style.boxShadow = "0 8px 25px rgba(26,26,24,0.1)" }}
-          onMouseLeave={function (e) { e.currentTarget.style.transform = "translateY(0)"; e.currentTarget.style.boxShadow = "0 1px 3px rgba(26,26,24,0.04)" }}>
+          onMouseEnter={function (e) { e.currentTarget.style.setProperty('transform', 'translateY(-3px)'); e.currentTarget.style.setProperty('box-shadow', '0 8px 25px rgba(26,26,24,0.1)') }}
+          onMouseLeave={function (e) { e.currentTarget.style.setProperty('transform', 'translateY(0)'); e.currentTarget.style.setProperty('box-shadow', '0 1px 3px rgba(26,26,24,0.04)') }}>
           <div style={{ display: "flex", alignItems: "center" }}>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 14, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.name}</div>
@@ -5544,7 +5603,7 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
                 }
               }}
               placeholder={activeTerms.length ? "Weiteren Begriff…" : "Name, Haus, Note… Enter zum Hinzufügen"}
-              style={{ ...S.inp, paddingRight: 80 }} />
+              className="inp" style={{ ...S.inp, paddingRight: 80 }} />
             <div style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", display: "flex", gap: 4 }}>
               <button onClick={() => setShowNotesPicker(v => !v)}
                 aria-label="Note aus Sammlung wählen"
@@ -5588,14 +5647,14 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
 
           {/* Notes picker dropdown */}
           {showNotesPicker && (
-            <div style={{ ...S.card, marginBottom: 8, padding: "12px", maxHeight: 200, overflowY: "auto" }}>
-              <div style={S.lbl}>NOTE WÄHLEN</div>
+            <div className="card" style={{marginBottom: 8, padding: "12px", maxHeight: 200, overflowY: "auto" }}>
+              <div className="lbl">NOTE WÄHLEN</div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                 {allNotes.slice(0, 60).map(n => {
                   const active = activeTerms.includes(n) || activeTerms.includes(normalizeTerm(n));
                   return (
                     <button key={n} onClick={() => addNoteTerm(n)}
-                      style={{ ...S.chip(active, "#534AB7"), padding: "3px 9px", fontSize: 11 }}>
+                      style={{ ...S.btn("out"), padding: "5px 9px", fontSize: 11, borderRadius: 16 }}>
                       {n}
                     </button>
                   );
@@ -5607,15 +5666,15 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
           {/* Filters */}
           <div style={{ display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap" }}>
             <select id="filter-familie" value={fam} onChange={e => setFam(e.target.value)}
-              style={{ ...S.inp, width: "auto", fontSize: 12, padding: "6px 8px", flex: 1 }}>
+              className="inp" style={{ ...S.inp, width: "auto", fontSize: 12, padding: "6px 8px", flex: 1 }}>
               {families.map(f => <option key={f}>{f}</option>)}
             </select>
             <select id="filter-saison" value={seas} onChange={e => setSeas(e.target.value)}
-              style={{ ...S.inp, width: "auto", fontSize: 12, padding: "6px 8px", flex: 1 }}>
+              className="inp" style={{ ...S.inp, width: "auto", fontSize: 12, padding: "6px 8px", flex: 1 }}>
               {["Alle", "Frühling", "Sommer", "Herbst", "Winter", "Ganzjährig"].map(s => <option key={s}>{s}</option>)}
             </select>
             <select id="filter-format" value={fmt} onChange={e => setFmt(e.target.value)}
-              style={{ ...S.inp, width: "auto", fontSize: 12, padding: "6px 8px" }}>
+              className="inp" style={{ ...S.inp, width: "auto", fontSize: 12, padding: "6px 8px" }}>
               {["Alle", "Probe", "Flakon", "Decant"].map(f => <option key={f}>{f}</option>)}
             </select>
           </div>
@@ -5625,10 +5684,10 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
             <span style={{ fontSize: 10, color: "#888780" }}>SORT:</span>
             {[["name", "A–Z"], ["house", "Haus"], ["rating", "★"], ["family", "Familie"], ["worn", "Getragen"]].map(([k, l]) => (
               <button key={k} onClick={() => setSort(k)}
-                style={{ ...S.chip(sort === k), padding: "4px 10px", fontSize: 10 }}>{l}</button>
+                className="btn" style={{ ...S.btn("out"), padding: "5px 10px", fontSize: 10, borderRadius: 16 }}>{l}</button>
             ))}
             <button onClick={onExport}
-              style={{ ...S.btn("out"), marginLeft: "auto", fontSize: 11, padding: "5px 10px", whiteSpace: "nowrap" }}>
+              className="btn" style={{ ...S.btn("out"), marginLeft: "auto", fontSize: 11, padding: "5px 10px", whiteSpace: "nowrap" }}>
               TSV ↓
             </button>
           </div>
@@ -5778,7 +5837,7 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
         return (
           <div>
             <button onClick={() => setDrill(null)} style={{ ...S.btn(), marginBottom: 16 }}>← Zurück</button>
-            <div style={S.card}>
+            <div className="card">
               <div style={{ fontSize: 18, color: fc, marginBottom: 4 }}>{drill}</div>
               <div style={{ display: "flex", gap: 16, marginBottom: 16, flexWrap: "wrap" }}>
                 <div><div style={{ fontSize: 22, fontWeight: 400 }}>{fi.length}</div><div style={{ fontSize: 10, color: "#888780" }}>PARFÜMS</div></div>
@@ -5793,13 +5852,13 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
                   </div>
                 )}
               </div>
-              <div style={S.lbl}>HÄUFIGSTE NOTEN</div>
+              <div className="lbl">HÄUFIGSTE NOTEN</div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 7, marginBottom: 16 }}>
                 {Object.entries(notes).sort((a, b) => b[1] - a[1]).slice(0, 15).map(([n, c]) => (
                   <span key={n} style={{ ...S.pill(fc), fontSize: 11, padding: "4px 10px" }}>{n} ×{c}</span>
                 ))}
               </div>
-              <div style={S.lbl}>PARFÜMS</div>
+              <div className="lbl">PARFÜMS</div>
               {[...fi].sort((a, b) => a.name.localeCompare(b.name)).map(p => (
                 <StatistikPerfumeItem key={p.id} p={p} onSelectPerfume={onSelectPerfume} fc={fc} />
               ))}
@@ -5823,16 +5882,16 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
 
           {/* Sub-tabs */}
           <div style={{ display: "flex", borderBottom: "1px solid #E8E6E0", marginBottom: 16 }}>
-            {STABS.map(t => (
+                        {STABS.map(t => (
               <button key={t.id} onClick={() => setStatsTab(t.id)}
-                style={{ ...S.dtab(statsTab === t.id), fontSize: 11 }}>{t.label}</button>
+                className="tab" style={{ ...S.dtab(statsTab === t.id), fontSize: 11 }}>{t.label}</button>
             ))}
           </div>
 
           {statsTab === "profil" && (
             <div>
-              <div style={{ ...S.card, marginBottom: 12 }}>
-                <div style={S.lbl}>DUFTPROFIL · tippen für Details</div>
+              <div className="card" style={{marginBottom: 12 }}>
+                <div className="lbl">DUFTPROFIL · tippen für Details</div>
                 {famC.filter(([, count]) => count >= 1).map(([fam, count]) => {
                   const pct = Math.round(count / total * 100), fc = FAM_COLORS[fam] || "#888";
                   return (
@@ -5846,8 +5905,8 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
                   );
                 })}
               </div>
-              <div style={{ ...S.card, marginBottom: 12 }}>
-                <div style={S.lbl}>SAISON-VERTEILUNG</div>
+              <div className="card" style={{marginBottom: 12 }}>
+                <div className="lbl">SAISON-VERTEILUNG</div>
                 {seasC.map(([s, n]) => {
                   const sc = getSeasonColor(s);
                   return (
@@ -5859,8 +5918,8 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
                   );
                 })}
               </div>
-              <div style={{ ...S.card, marginBottom: 12 }}>
-                <div style={S.lbl}>KONZENTRATION</div>
+              <div className="card" style={{marginBottom: 12 }}>
+                <div className="lbl">KONZENTRATION</div>
                 {concC.map(([c, n]) => (
                   <div key={c} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 7 }}>
                     <div style={{ width: 52, fontSize: 12, fontWeight: 500 }}>{c}</div>
@@ -5881,8 +5940,8 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
                 </div>
               ) : (
                 <div>
-                  <div style={{ ...S.card, marginBottom: 12 }}>
-                    <div style={S.lbl}>TOP 10 MEISTGETRAGEN</div>
+                  <div className="card" style={{marginBottom: 12 }}>
+                    <div className="lbl">TOP 10 MEISTGETRAGEN</div>
                     {wearByPerfume.map(({ p, n }, i) => (
                       <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
                         <div style={{ fontSize: 10, color: "#B4B2A9", minWidth: 16 }}>#{i + 1}</div>
@@ -5896,8 +5955,8 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
                     ))}
                   </div>
                   {monthlyWear.length > 1 && (
-                    <div style={{ ...S.card, marginBottom: 12 }}>
-                      <div style={S.lbl}>TRAGEHÄUFIGKEIT (MONATE)</div>
+                    <div className="card" style={{marginBottom: 12 }}>
+                      <div className="lbl">TRAGEHÄUFIGKEIT (MONATE)</div>
                       {monthlyWear.map(([k, n]) => (
                         <div key={k} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 7 }}>
                           <div style={{ width: 56, fontSize: 11, color: "#888780" }}>{k}</div>
@@ -5907,8 +5966,8 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
                       ))}
                     </div>
                   )}
-                  <div style={S.card}>
-                    <div style={S.lbl}>GETRAGEN NACH DUFTFAMILIE</div>
+                  <div className="card">
+                    <div className="lbl">GETRAGEN NACH DUFTFAMILIE</div>
                     {wearByFam.map(([f, n]) => {
                       const fc = FAM_COLORS[f] || "#888";
                       return (
@@ -5927,8 +5986,8 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
 
           {statsTab === "noten" && (
             <div>
-              <div style={{ ...S.card, marginBottom: 12 }}>
-                <div style={S.lbl}>TOP 30 DUFTNOTEN</div>
+              <div className="card" style={{marginBottom: 12 }}>
+                <div className="lbl">TOP 30 DUFTNOTEN</div>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>
                   {noteC.slice(0, 30).map(([n, c], i) => {
                     const size = i < 5 ? 13 : i < 12 ? 11 : 10;
@@ -5941,8 +6000,8 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
                   })}
                 </div>
               </div>
-              <div style={S.card}>
-                <div style={S.lbl}>NOTEN NACH KATEGORIE</div>
+              <div className="card">
+                <div className="lbl">NOTEN NACH KATEGORIE</div>
                 {[["Kopfnoten", items.map(p => splitNotes(p.top)).flat()],
                 ["Herznoten", items.map(p => splitNotes(p.middle)).flat()],
                 ["Basisnoten", items.map(p => splitNotes(p.base)).flat()]].map(([cat, allNotes]) => {
@@ -5965,8 +6024,8 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
 
           {statsTab === "favoriten" && (
             <div>
-              <div style={{ ...S.card, marginBottom: 12 }}>
-                <div style={S.lbl}>5-STERNE PARFÜMS</div>
+              <div className="card" style={{marginBottom: 12 }}>
+                <div className="lbl">5-STERNE PARFÜMS</div>
                 {items.filter(p => p.rating === 5).sort((a, b) => a.name.localeCompare(b.name)).map(p => (
                   <div key={p.id} style={{ padding: "7px 0", borderBottom: "1px solid #F1EFE8", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <div>
@@ -5985,8 +6044,8 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
                 )}
               </div>
               {avgRatingByFam.length > 0 && (
-                <div style={{ ...S.card, marginBottom: 12 }}>
-                  <div style={S.lbl}>Ø BEWERTUNG PRO FAMILIE</div>
+                <div className="card" style={{marginBottom: 12 }}>
+                  <div className="lbl">Ø BEWERTUNG PRO FAMILIE</div>
                   {avgRatingByFam.map(([f, avg, cnt]) => {
                     const fc = FAM_COLORS[f] || "#888";
                     return (
@@ -5999,8 +6058,8 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
                   })}
                 </div>
               )}
-              <div style={S.card}>
-                <div style={S.lbl}>ALLE BEWERTETEN PARFÜMS</div>
+              <div className="card">
+                <div className="lbl">ALLE BEWERTETEN PARFÜMS</div>
                 {items.filter(p => p.rating > 0).sort((a, b) => (b.rating || 0) - (a.rating || 0)).map(p => (
                   <div key={p.id} style={{ padding: "7px 0", borderBottom: "1px solid #F1EFE8", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <div>
@@ -6060,7 +6119,7 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
                   </div>
                   {selectedWish.note && <div style={{ background: "#FAFAF8", borderRadius: 12, padding: 14, marginBottom: 16 }}><p style={{ fontSize: 12, fontStyle: "italic", color: "#888780", margin: 0, fontFamily: "'Georgia',serif", lineHeight: 1.5 }}>"{selectedWish.note}"</p></div>}
                   <div style={{ display: "flex", gap: 10 }}>
-                    {!alreadyOwned && <button onClick={() => { moveToCollection({ ...selectedWish, ...wishDetails }); setSelectedWish(null); setWishDetails(null); }} style={{ flex: 1, ...S.btn("pri"), padding: "14px", borderRadius: 10, fontSize: 13 }}>→ Zur Sammlung</button>}
+                    {!alreadyOwned && <button onClick={() => { moveToCollection({ ...selectedWish, ...wishDetails }); setSelectedWish(null); setWishDetails(null); }} className="btn" style={{ flex: 1, ...S.btn("pri"), padding: "14px", borderRadius: 10, fontSize: 13 }}>→ Zur Sammlung</button>}
                     {selectedWish.url && <a href={selectedWish.url} target="_blank" rel="noopener noreferrer" style={{ flex: 1, ...S.btn("out"), padding: "14px", borderRadius: 10, fontSize: 13, textAlign: "center", textDecoration: "none", color: "#1A1A18" }}>Parfumo ↗</a>}
                   </div>
                 </div>
@@ -6074,7 +6133,7 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
                     <div style={{ background: "#FAFAF8", borderRadius: 10, padding: 12, textAlign: "center" }}><div style={{ fontSize: 10, color: "#B4B2A9", marginBottom: 4 }}>STATUS</div><div style={{ fontSize: 12, color: alreadyOwned ? "#1D9E75" : "#888780" }}>{alreadyOwned ? "In Sammlung" : "Noch nicht"}</div></div>
                   </div>
                   <div style={{ display: "flex", gap: 10 }}>
-                    {!alreadyOwned && <button onClick={() => { moveToCollection(selectedWish); setSelectedWish(null); }} style={{ flex: 1, ...S.btn("pri"), padding: "14px", borderRadius: 10, fontSize: 13 }}>→ Zur Sammlung</button>}
+                    {!alreadyOwned && <button onClick={() => { moveToCollection(selectedWish); setSelectedWish(null); }} className="btn" style={{ flex: 1, ...S.btn("pri"), padding: "14px", borderRadius: 10, fontSize: 13 }}>→ Zur Sammlung</button>}
                     {selectedWish.url && <a href={selectedWish.url} target="_blank" rel="noopener noreferrer" style={{ flex: 1, ...S.btn("out"), padding: "14px", borderRadius: 10, fontSize: 13, textAlign: "center", textDecoration: "none", color: "#1A1A18" }}>Parfumo ↗</a>}
                   </div>
                 </div>
@@ -6188,7 +6247,7 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
           </div>
 
           {/* Quick-add bar - elegant design */}
-          <div style={{ ...S.card, marginBottom: 16, padding: showForm ? "20px" : "14px 16px", borderRadius: 16, boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+          <div className="card" style={{marginBottom: 16, padding: showForm ? "20px" : "14px 16px", borderRadius: 16, boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
             {!showForm ? (
               <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
                 <div style={{ flex: 1, position: "relative" }}>
@@ -6196,7 +6255,7 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
                   <input id="wish-quick-add" value={linkUrl} onChange={e => { setLinkUrl(e.target.value); setErr(""); }}
                     onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); linkUrl.trim() && lookupWish(); } }}
                     placeholder="Parfumo-Link oder Name hinzufügen…"
-                    style={{ ...S.inp, paddingRight: 10, borderColor: "#E8E6E0", background: "#FAFAF8", fontSize: 13, borderRadius: 10 }} />
+                    className="inp" style={{ ...S.inp, paddingRight: 10, borderColor: "#E8E6E0", background: "#FAFAF8", fontSize: 13, borderRadius: 10 }} />
                 </div>
                 {linkUrl.trim() ? (
                   <button onClick={linkUrl.includes("parfumo.de") ? lookupWish : () => { set("name", linkUrl); setLinkUrl(""); setShowForm(true); }}
@@ -6226,7 +6285,7 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
                   <input id="wish-link-input" value={linkUrl} onChange={e => { setLinkUrl(e.target.value); setErr(""); }}
                     onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); lookupWish(); } }}
                     placeholder="Parfumo-Link einfügen…"
-                    style={{ ...S.inp, flex: 1, fontSize: 13, borderRadius: 10 }} />
+                    className="inp" style={{ ...S.inp, flex: 1, fontSize: 13, borderRadius: 10 }} />
                   <button onClick={lookupWish} disabled={loading || !linkUrl.trim()}
                     style={{
                       ...S.btn("out"), padding: "12px 16px", whiteSpace: "nowrap", fontSize: 12, borderRadius: 10,
@@ -6239,16 +6298,16 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
                 {/* Name + House */}
                 <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
                   <input id="wish-name" value={form.name} onChange={e => set("name", e.target.value)}
-                    placeholder="Name *" style={{ ...S.inp, flex: 2, fontSize: 13, borderRadius: 10 }} />
+                    placeholder="Name *" className="inp" style={{ ...S.inp, flex: 2, fontSize: 13, borderRadius: 10 }} />
                   <input id="wish-house" value={form.house} onChange={e => set("house", e.target.value)}
-                    placeholder="Haus" style={{ ...S.inp, flex: 1, fontSize: 13, borderRadius: 10 }} />
+                    placeholder="Haus" className="inp" style={{ ...S.inp, flex: 1, fontSize: 13, borderRadius: 10 }} />
                 </div>
 
                 {/* Priority */}
                 <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
                   {WISH_PRIOS.map(p => (
                     <button key={p.id} onClick={() => set("prio", p.id)}
-                      style={{ ...S.chip(form.prio === p.id, p.color), fontSize: 11, padding: "8px 14px", flex: 1, borderRadius: 8 }}>
+                      style={{ ...S.btn("out"), padding: "10px", fontSize: 11, borderRadius: 12 }}>
                       {p.label}
                     </button>
                   ))}
@@ -6257,7 +6316,7 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
                 {/* Note */}
                 <textarea id="wish-note" value={form.note} onChange={e => set("note", e.target.value)}
                   placeholder="Notiz (optional)…"
-                  style={{ ...S.ta, minHeight: 50, fontSize: 13, marginBottom: 12, borderRadius: 10 }} />
+                  className="ta" style={{ ...S.ta, minHeight: 50, fontSize: 13, marginBottom: 12, borderRadius: 10 }} />
 
                 {err && <div style={{ fontSize: 12, color: "#E24B4A", marginBottom: 10 }}>{err}</div>}
 
@@ -6292,14 +6351,13 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
             const daysAgo = w.added ? Math.floor((Date.now() - new Date(w.added).getTime()) / (1000 * 60 * 60 * 24)) : null;
             return (
               <div key={w.id} onClick={() => handleWishClick(w)}
-                style={{
-                  ...S.card, padding: "18px 20px", marginBottom: 10,
+                className="card" style={{padding: "18px 20px", marginBottom: 10,
                   borderRadius: 16, boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
                   borderLeft: `4px solid ${prioColors[w.prio] || "#D3D1C7"}`,
                   cursor: "pointer", transition: "all .2s"
                 }}
-                onMouseEnter={function (e) { e.currentTarget.style.boxShadow = "0 4px 16px rgba(0,0,0,0.08)" }}
-                onMouseLeave={function (e) { e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.04)" }}>
+                onMouseEnter={function (e) { e.currentTarget.style.setProperty('box-shadow', '0 4px 16px rgba(0,0,0,0.08)') }}
+                onMouseLeave={function (e) { e.currentTarget.style.setProperty('box-shadow', '0 2px 8px rgba(0,0,0,0.04)') }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 16, fontWeight: 500, fontFamily: "'Georgia',serif", color: "#1A1A18", marginBottom: 4 }}>{w.name}</div>
@@ -6326,8 +6384,8 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
                         border: "1px solid #E8E6E0", background: "#fff", cursor: "pointer",
                         color: "#534AB7", fontFamily: "'Georgia',serif", transition: "all .12s"
                       }}
-                      onMouseEnter={function (e) { e.currentTarget.style.background = "#534AB7"; e.currentTarget.style.color = "#fff" }}
-                      onMouseLeave={function (e) { e.currentTarget.style.background = "#fff"; e.currentTarget.style.color = "#534AB7" }}>
+                      onMouseEnter={function (e) { e.currentTarget.style.setProperty('background', '#534AB7'); e.currentTarget.style.setProperty('color', '#fff') }}
+                      onMouseLeave={function (e) { e.currentTarget.style.setProperty('background', '#fff'); e.currentTarget.style.setProperty('color', '#534AB7') }}>
                       → Sammlung
                     </button>
                   )}
@@ -6338,8 +6396,8 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
                         border: "1px solid #E8E6E0", background: "#fff",
                         color: "#888780", textDecoration: "none", transition: "all .12s"
                       }}
-                      onMouseEnter={function (e) { e.currentTarget.style.borderColor = "#185FA5"; e.currentTarget.style.color = "#185FA5" }}
-                      onMouseLeave={function (e) { e.currentTarget.style.borderColor = "#E8E6E0"; e.currentTarget.style.color = "#888780" }}>
+                      onMouseEnter={function (e) { e.currentTarget.style.setProperty('border-color', '#185FA5'); e.currentTarget.style.setProperty('color', '#185FA5') }}
+                      onMouseLeave={function (e) { e.currentTarget.style.setProperty('border-color', '#E8E6E0'); e.currentTarget.style.setProperty('color', '#888780') }}>
                       Parfumo ↗
                     </a>
                   )}
@@ -6348,8 +6406,8 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
                       background: "none", border: "none", cursor: "pointer", fontSize: 11, color: "#D3D1C7", padding: "8px", marginLeft: "auto",
                       transition: "color .12s"
                     }}
-                    onMouseEnter={function (e) { e.currentTarget.style.color = "#E24B4A" }}
-                    onMouseLeave={function (e) { e.currentTarget.style.color = "#D3D1C7" }}>✕</button>
+                    onMouseEnter={function (e) { e.currentTarget.style.setProperty('color', '#E24B4A') }}
+                    onMouseLeave={function (e) { e.currentTarget.style.setProperty('color', '#D3D1C7') }}>✕</button>
                 </div>
               </div>
             );
@@ -6574,7 +6632,7 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
       return (
         <div>
           {/* Header */}
-          <div style={{ ...S.card, background: "#F9F8F5", marginBottom: 12 }}>
+          <div className="card" style={{background: "#F9F8F5", marginBottom: 12 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
               <div>
                 <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 2 }}>Physische Ordnerstruktur</div>
@@ -6585,12 +6643,12 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
             </div>
 
             {/* Scheme selector */}
-            <div style={S.lbl}>SORTIERUNG</div>
+            <div className="lbl">SORTIERUNG</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {ORDNER_SCHEMES.map(sc => (
                 <button key={sc.id} onClick={() => { setScheme(sc.id); setOpenL1({}); setOpenL2({}); }}
                   style={{
-                    ...S.chip(scheme === sc.id), padding: "8px 12px", borderRadius: 8,
+                    ...S.btn("out"), padding: "8px 12px", borderRadius: 12,
                     display: "flex", flexDirection: "column", alignItems: "flex-start", textAlign: "left"
                   }}>
                   <span style={{ fontSize: 12, fontWeight: scheme === sc.id ? 500 : 400 }}>{sc.label}</span>
@@ -6604,7 +6662,7 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
           <div style={{ position: "relative", marginBottom: 12 }}>
             <input id="folder-search" value={searchFilt} onChange={e => setSearch(e.target.value)}
               placeholder="Parfüm suchen → Ordner finden…"
-              style={{ ...S.inp, paddingRight: 36 }} />
+              className="inp" style={{ ...S.inp, paddingRight: 36 }} />
             {searchFilt && (
               <button onClick={() => setSearch("")}
                 style={{
@@ -6616,8 +6674,8 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
 
           {/* Search results: show path */}
           {filteredItems && (
-            <div style={{ ...S.card, marginBottom: 12 }}>
-              <div style={S.lbl}>SUCHERGEBNIS ({filteredItems.length})</div>
+            <div className="card" style={{marginBottom: 12 }}>
+              <div className="lbl">SUCHERGEBNIS ({filteredItems.length})</div>
               {filteredItems.length === 0 && (
                 <div style={{ fontSize: 12, color: "#888780" }}>Kein Treffer.</div>
               )}
@@ -6761,8 +6819,8 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
           })}
 
           {/* Legend */}
-          <div style={{ ...S.card, background: "#F9F8F5", marginTop: 4 }}>
-            <div style={S.lbl}>LEGENDE</div>
+          <div className="card" style={{background: "#F9F8F5", marginTop: 4 }}>
+            <div className="lbl">LEGENDE</div>
             <div style={{ fontSize: 11, color: "#888780", lineHeight: 1.8 }}>
               <div>◼ Hauptordner = physischer Karton / Regalfach</div>
               <div>● Unterordner = Trennkarte oder Gruppe</div>
@@ -6777,7 +6835,7 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
     function SettingsSection({ title, icon, children, defaultOpen = false }) {
       const [open, setOpen] = useState(defaultOpen);
       return (
-        <div style={{ ...S.card, marginBottom: 10, overflow: "hidden" }}>
+        <div className="card" style={{marginBottom: 10, overflow: "hidden" }}>
           <button onClick={() => setOpen(o => !o)} style={{
             display: "flex", justifyContent: "space-between", alignItems: "center",
             width: "100%", background: "none", border: "none", cursor: "pointer",
@@ -6815,6 +6873,7 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
         const now = Date.now();
         setModelStatus(GTM_MODEL_POOL.map(m => {
           const s = _gtmState[m.id];
+          if (!s || typeof s !== 'object' || s === null) return { id: m.id, blocked: false, req: 0, tok: 0, quality: m.quality };
           const blocked = s.blockedUntil > now;
           return { id: m.id.split("-").slice(0,3).join("-"), blocked, req: s.reqRemainingDay, tok: s.tokRemaining, quality: m.quality };
         }));
@@ -6941,9 +7000,9 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
                 <label htmlFor="settings-app-name" style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0,0,0,0)" }}>App-Name</label>
                 <input id="settings-app-name" value={nameInput} onChange={e => setNameInput(e.target.value)}
                   onKeyDown={e => e.key === "Enter" && onSetAppName(nameInput.trim() || "Sillage")}
-                  style={{ ...S.inp, flex: 1, fontSize: 13 }} placeholder="Sillage" />
+                  className="inp" style={{ ...S.inp, flex: 1, fontSize: 13 }} placeholder="Sillage" />
                 <button onClick={() => onSetAppName(nameInput.trim() || "Sillage")}
-                  style={{ ...S.btn("pri"), padding: "10px 14px", fontSize: 12 }}>OK</button>
+                  className="btn" style={{ ...S.btn("pri"), padding: "10px 14px", fontSize: 12 }}>OK</button>
               </div>
             </div>
 
@@ -7024,7 +7083,7 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
               value={groqKeyDraft}
               onChange={e => { setGroqKeyDraft(e.target.value); setGroqKeyMsg(""); }}
               placeholder="gsk_…"
-              style={{ ...S.inp, marginBottom: 10, fontFamily: "ui-monospace,monospace", fontSize: 12 }} />
+              style={{ ...S.inp, marginBottom: 10, fontFamily: "ui-monospace,monospace", fontSize: 12 }} className="inp" />
             <div style={{ display: "flex", gap: 8 }}>
               <button type="button" onClick={() => {
                 const t = groqKeyDraft.trim();
@@ -7035,11 +7094,11 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
                 }
                 try { localStorage.setItem(KEYS.groqKey, t); setGroqKeyMsg("✓ Gespeichert."); }
                 catch { setGroqKeyMsg("Speichern fehlgeschlagen."); }
-              }} style={{ ...S.btn("pri"), padding: "10px 16px" }}>Speichern</button>
+              }} style={{ ...S.btn("pri"), padding: "10px 16px" }} className="btn">Speichern</button>
               <button type="button" onClick={() => {
                 try { localStorage.removeItem(KEYS.groqKey); } catch { }
                 setGroqKeyDraft(""); setGroqKeyMsg("Schlüssel entfernt.");
-              }} style={{ ...S.btn("out"), padding: "10px 16px" }}>Entfernen</button>
+              }} style={{ ...S.btn("out"), padding: "10px 16px" }} className="btn">Entfernen</button>
             </div>
             {groqKeyMsg && <div style={{ fontSize: 12, marginTop: 8, color: groqKeyMsg.includes("✓") ? "#1D9E75" : "#993C1D" }}>{groqKeyMsg}</div>}
             <GroqRateLimitStatus />
@@ -7057,7 +7116,7 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
                 <div style={{ display: "flex", gap: 6 }}>
                   {["Probe", "Flakon", "Decant"].map(f => (
                     <button key={f} onClick={() => setFormat(f)}
-                      style={{ ...S.chip(format === f), padding: "6px 14px", fontSize: 11 }}>{f}</button>
+                                            className="btn" style={{ ...S.btn("out"), padding: "8px 14px", fontSize: 11 }}>{f}</button>
                   ))}
                 </div>
               </div>
@@ -7066,9 +7125,10 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
                 <input id="parfumo-url" value={linkUrl} onChange={e => { setLinkUrl(e.target.value); setLinkErr(""); setStatus(""); }}
                   onKeyDown={e => e.key === "Enter" && !loading && handleLookup()}
                   placeholder="https://www.parfumo.de/Parfums/…"
-                  style={{ ...S.inp, flex: 1, fontSize: 12 }} />
+                  style={{ ...S.inp, flex: 1, fontSize: 12 }} className="inp" />
                 <button onClick={handleLookup} disabled={loading || !linkUrl.trim()}
-                  style={{ ...S.btn("pri"), padding: "10px 14px", opacity: loading || !linkUrl.trim() ? 0.5 : 1 }}>
+                  style={{ ...S.btn("pri"), padding: "10px 14px", opacity: loading || !linkUrl.trim() ? 0.5 : 1 }}
+                  className="btn">
                   {loading ? "…" : "Laden"}
                 </button>
               </div>
@@ -7079,15 +7139,15 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
                   <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 10 }}>Vorschau</div>
                   <div style={{ display: "grid", gap: 7, marginBottom: 10 }}>
                     <input value={preview.name || ""} onChange={e => setPreview(p => ({ ...p, name: e.target.value }))}
-                      placeholder="Name *" style={{ ...S.inp, fontSize: 12 }} />
+                      placeholder="Name *" className="inp" style={{ ...S.inp, fontSize: 12 }} />
                     <input value={preview.house || ""} onChange={e => setPreview(p => ({ ...p, house: e.target.value }))}
-                      placeholder="Haus" style={{ ...S.inp, fontSize: 12 }} />
+                      placeholder="Haus" className="inp" style={{ ...S.inp, fontSize: 12 }} />
                     <textarea value={preview.top || ""} onChange={e => setPreview(p => ({ ...p, top: e.target.value }))}
-                      placeholder="Kopfnoten" style={{ ...S.ta, minHeight: 48, fontSize: 12 }} />
+                      placeholder="Kopfnoten" className="ta" style={{ ...S.ta, minHeight: 48, fontSize: 12 }} />
                     <textarea value={preview.middle || ""} onChange={e => setPreview(p => ({ ...p, middle: e.target.value }))}
-                      placeholder="Herznoten" style={{ ...S.ta, minHeight: 48, fontSize: 12 }} />
+                      placeholder="Herznoten" className="ta" style={{ ...S.ta, minHeight: 48, fontSize: 12 }} />
                     <textarea value={preview.base || ""} onChange={e => setPreview(p => ({ ...p, base: e.target.value }))}
-                      placeholder="Basisnoten" style={{ ...S.ta, minHeight: 48, fontSize: 12 }} />
+                      placeholder="Basisnoten" className="ta" style={{ ...S.ta, minHeight: 48, fontSize: 12 }} />
                   </div>
                   <div style={{ display: "flex", gap: 8 }}>
                     <button onClick={confirmAdd} style={{ ...S.btn("pri"), flex: 1, padding: "10px" }}>
@@ -7119,7 +7179,7 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
               </div>
               <label style={{ display: "block" }}>
                 <input type="file" accept=".tsv,.txt,.csv" onChange={e => handleFile(e.target.files[0])} style={{ display: "none" }} />
-                <span style={{ ...S.btn("out"), display: "block", textAlign: "center", padding: "10px", cursor: "pointer" }}>
+                <span className="btn" style={{ ...S.btn("out"), display: "block", textAlign: "center", padding: "10px", cursor: "pointer" }}>
                   Datei auswählen
                 </span>
               </label>
@@ -7132,7 +7192,7 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
 
             {/* Export */}
             <div>
-              <button onClick={onExport} style={{ ...S.btn("out"), width: "100%" }}>
+              <button onClick={onExport} className="btn" style={{ ...S.btn("out"), width: "100%" }}>
                 TSV exportieren ({items.length} Einträge)
               </button>
               <div style={{ fontSize: 11, color: "#888780", marginTop: 6 }}>Tab-getrennt, UTF-8 inkl. Bewertungen.</div>
@@ -7159,20 +7219,22 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
                     if (confirmMode === "items") onClearAll();
                     else if (onClearAllData) onClearAllData();
                     setConfirmMode(null);
-                  }} style={{ ...S.btn("pri"), background: "#E24B4A", flex: 1 }}>
+                  }} style={{ ...S.btn("pri"), background: "#E24B4A", flex: 1 }} className="btn">
                     Ja, löschen
                   </button>
-                  <button onClick={() => setConfirmMode(null)} style={{ ...S.btn("out"), flex: 1 }}>Abbrechen</button>
+                  <button onClick={() => setConfirmMode(null)} style={{ ...S.btn("out"), flex: 1 }} className="btn">
+                    Abbrechen
+                  </button>
                 </div>
               </div>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 <button onClick={() => setConfirmMode("items")}
-                  style={{ ...S.btn("out"), width: "100%", color: "#A32D2D", borderColor: "#F09595" }}>
+                  className="btn" style={{ ...S.btn("out"), width: "100%", color: "#A32D2D", borderColor: "#F09595" }}>
                   Sammlung leeren
                 </button>
                 <button onClick={() => setConfirmMode("all")}
-                  style={{ ...S.btn("out"), width: "100%", color: "#A32D2D", borderColor: "#F09595", fontSize: 12 }}>
+                  className="btn" style={{ ...S.btn("out"), width: "100%", color: "#A32D2D", borderColor: "#F09595", fontSize: 12 }}>
                   Alle Daten zurücksetzen
                 </button>
               </div>
@@ -7193,9 +7255,9 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
       static getDerivedStateFromError(err) {
         return { hasError: true, message: String(err?.message || err || "Unbekannter Fehler") };
       }
-      componentDidCatch(err) {
+      componentDidCatch(err, info) {
         try {
-          console.error("AppErrorBoundary", err);
+          console.error("AppErrorBoundary", err, info);
         } catch { }
       }
       render() {
@@ -7233,7 +7295,7 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
           case 'SET_TAB': return { ...s, tab: a.payload };
           case 'SET_TOAST': return { ...s, toast: a.payload };
           case 'SET_LOADED': return { ...s, loaded: a.payload };
-          case 'SET_BACK_STACK': return { ...s, backStack: a.payload };
+          case 'SET_BACK_STACK': return { ...s, backStack: typeof a.payload === 'function' ? a.payload(s.backStack) : a.payload };
           case 'SET_DETAIL': return { ...s, detail: a.payload };
           case 'SET_SHOW_ONBOARD': return { ...s, showOnboard: a.payload };
           default: return s;
@@ -7320,7 +7382,7 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
         // user closes the app within the 500 ms debounce window.
         try { localStorage.setItem(KEYS.log, JSON.stringify(next)); } catch { }
         dispatch({ type: 'SET_TOAST', payload: { msg: "✓ Getragen", show: true } });
-        setTimeout(() => dispatch({ type: 'SET_TOAST', payload: t => ({ ...t, show: false }) }), 2000);
+        setTimeout(() => dispatch({ type: 'SET_TOAST', payload: { msg: "", show: false } }), 2000);
       }, [state.log]);
       const handleExport = useCallback(() => downloadTSV(state.items), [state.items]);
       // Full data reset: clears items, log, notes, fill levels, price data.
@@ -7394,7 +7456,7 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
       useBodyLock(!!appDetailPerfume || state.showOnboard);
 
       if (!state.loaded) return (
-        <div style={{ ...S.app, alignItems: "center", justifyContent: "center", background: "#FAFAF8" }} role="status" aria-live="polite">
+        <div className="app" style={{ alignItems: "center", justifyContent: "center", background: "#FAFAF8" }} role="status" aria-live="polite">
           <div style={{ textAlign: "center" }}>
             <div style={{ fontSize: 32, marginBottom: 16, animation: "breathe 2s ease-in-out infinite" }}>◇</div>
             <div style={{ color: "#888780", fontSize: 13, letterSpacing: "1px", animation: "pulse 2s ease-in-out infinite" }}>Lädt…</div>
@@ -7403,7 +7465,7 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
       );
 
       return (
-        <div style={S.app}>
+        <div className="app">
           {/* Error Banner */}
           <ErrorBanner errors={errors} onDismiss={dismiss} />
 
@@ -7424,7 +7486,7 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
             <OnboardingModal onComplete={handleOnboardComplete} />
           )}
 
-          <header style={S.hdr}>
+          <header className="hdr">
             <h1 style={{
               fontSize: 20, fontWeight: 400, letterSpacing: "-0.5px", color: "#1A1A18",
               margin: "0 0 14px", display: "flex", alignItems: "baseline", gap: 8
@@ -7434,13 +7496,14 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
                 {state.items.length > 0 ? `${state.items.length} parfüms` : ""}
               </span>
             </h1>
-            <nav style={S.tabs} role="tablist" aria-label="Hauptnavigation">
+            <nav className="tabs" role="tablist" aria-label="Hauptnavigation">
               {TABS.map(t => (
                 <button key={t.id} role="tab"
                   aria-selected={state.tab === t.id}
                   aria-controls={`panel-${t.id}`}
                   id={`tab-${t.id}`}
                   onClick={() => { dispatch({ type: 'SET_DETAIL', payload: null }); dispatch({ type: 'SET_BACK_STACK', payload: s => [...s, state.tab].slice(-10) }); dispatch({ type: 'SET_TAB', payload: t.id }); }}
+                  className="tab"
                   style={{ ...S.tab(state.tab === t.id), whiteSpace: "nowrap", position: "relative" }}>
                   <span style={{ marginRight: 1, fontSize: 9 }}>{t.i}</span>{t.l}
                   {t.badge && <span style={{
@@ -7452,7 +7515,7 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
             </nav>
           </header>
           <PullToRefresh tabKey={state.tab}>
-            <main key={state.tab} style={{...S.body, animation: "fadeInUp .18s ease-out both"}} role="tabpanel" id={`panel-${state.tab}`} aria-labelledby={`tab-${state.tab}`}>
+            <main key={state.tab} className="body" style={{ animation: "fadeInUp .18s ease-out both" }} role="tabpanel" id={`panel-${state.tab}`} aria-labelledby={`tab-${state.tab}`}>
               {state.tab === "heute" && (
                 <HeuteTab items={state.items} log={state.log} onLog={handleLog}
                   pushError={pushError} prefs={state.prefs} priceMl={state.priceMl}

@@ -1,3 +1,4 @@
+/* stylelint-disable-next-line declaration-block-no-unknown-properties */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -68,11 +69,7 @@
       z-index: 1;
     }
 
-    * {
-      -webkit-overflow-scrolling: touch;
-    }
-
-    button {
+        button {
       touch-action: manipulation;
       -webkit-tap-highlight-color: transparent;
     }
@@ -316,7 +313,7 @@
     }
 
     .float-lux {
-      animation: float 3s ease-in-out infinite
+      animation: float 3s ease-in-out infinite;
     }
 
     .glow-lux {
