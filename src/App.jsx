@@ -1,4 +1,4 @@
-const { useState, useEffect, useMemo, useCallback, useRef, useReducer } = React;
+import React, { useState, useEffect, useMemo, useCallback, useRef, useReducer } from "react";
 
     // ============================================================
     // ERROR HANDLING MODULE
@@ -1627,8 +1627,9 @@ Nur JSON:
       lbl: "lbl",
       
       // Dynamische Styles - geben style-Objekte zurück (können nicht vollständig klassifiziert werden)
-            tab: (a) => ({
+      tab: (a) => ({
         // Basis-Klasse wird über className toegepast, aktive/inaktive Zustände über Inline-Style
+        borderBottom: `2px solid ${a ? "#1A1A18" : "transparent"}`, 
         color: a ? "#1A1A18" : "#7A7975",
         fontWeight: a ? 500 : 400
       }),
@@ -7452,16 +7453,7 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
       // App-level detail overlay state
       const appDetailPerfume = state.detail ? state.items.find(x => x.id === state.detail) || null : null;
       const appDetailRef = useRef(null);
-      const navRef = useRef(null);
-       useEffect(() => {
-         if (navRef.current) {
-           const activeTab = navRef.current.querySelector('[aria-selected="true"]');
-           if (activeTab) {
-             activeTab.scrollIntoView({ inline: "center", block: "nearest", behavior: "smooth" });
-           }
-         }
-       }, [state.tab]);
-       useBodyLock(!!appDetailPerfume || state.showOnboard);
+      useBodyLock(!!appDetailPerfume || state.showOnboard);
 
       if (!state.loaded) return (
         <div className="app" style={{ alignItems: "center", justifyContent: "center", background: "#FAFAF8" }} role="status" aria-live="polite">
@@ -7504,7 +7496,7 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
                 {state.items.length > 0 ? `${state.items.length} parfüms` : ""}
               </span>
             </h1>
-            <nav ref={navRef} className="tabs" role="tablist" aria-label="Hauptnavigation">
+            <nav className="tabs" role="tablist" aria-label="Hauptnavigation">
               {TABS.map(t => (
                 <button key={t.id} role="tab"
                   aria-selected={state.tab === t.id}
@@ -7513,9 +7505,9 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
                   onClick={() => { dispatch({ type: 'SET_DETAIL', payload: null }); dispatch({ type: 'SET_BACK_STACK', payload: s => [...s, state.tab].slice(-10) }); dispatch({ type: 'SET_TAB', payload: t.id }); }}
                   className="tab"
                   style={{ ...S.tab(state.tab === t.id), whiteSpace: "nowrap", position: "relative" }}>
-                  <span className="tab-icon">{t.i}</span>{t.l}
+                  <span style={{ marginRight: 1, fontSize: 9 }}>{t.i}</span>{t.l}
                   {t.badge && <span style={{
-                    position: "absolute", top: 2, right: 4, fontSize: 6, background: "#E24B4A", color: "#fff",
+                    position: "absolute", top: 1, right: 1, fontSize: 6, background: "#E24B4A", color: "#fff",
                     borderRadius: 5, minWidth: 10, height: 10, lineHeight: "10px", textAlign: "center", padding: "0 2px"
                   }}>{t.badge}</span>}
                 </button>

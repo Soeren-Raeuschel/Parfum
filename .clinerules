@@ -1,0 +1,43 @@
+# Allgemeine Arbeitsweise
+
+- Antworte auf Deutsch.
+- Arbeite nur an dem, was in der Aufgabe steht. Ändere nichts darüber hinaus.
+- Wenn etwas unklar ist, frage nach, statt zu raten.
+
+# Dateien lesen
+
+- Lies jede Datei, die du ändern willst, vorher vollständig mit read_file.
+- Ändere niemals eine Datei, die du in dieser Aufgabe noch nicht gelesen hast.
+- Dateien, die mit @ genannt sind, hast du bereits im Kontext. Lies andere Dateien nur, wenn sie für die Aufgabe nötig sind.
+- Bei sehr großen Dateien lies gezielt die relevanten Abschnitte und sag mir, welche du gelesen hast.
+
+# Dateien bearbeiten
+
+- Bearbeite Dateien ausschließlich mit den Datei-Tools (write_to_file, replace_in_file).
+- Nutze niemals Terminal-Befehle wie sed, echo, cat, tee, nano, vim oder edit, um Dateien zu erstellen oder zu ändern.
+- Gib bei jedem Datei-Tool-Aufruf immer den vollständigen Pfad relativ zum Projektordner an. Ein Aufruf ohne path ist ungültig und muss vor dem Senden korrigiert werden.
+- Bevorzuge kleine, gezielte Änderungen mit replace_in_file. Schreibe eine ganze Datei nur neu, wenn es wirklich nötig ist.
+- Behalte den bestehenden Code-Stil, die Einrückung und die Namensgebung bei.
+
+# Terminal
+
+- Nutze das Terminal nur für Befehle wie npm, pip, git, Build-Skripte und Tests.
+- Öffne im Terminal keine interaktiven Programme (Editoren, Pager, Abfragen, die auf Eingabe warten).
+- Nutze bei Git immer eine Nachricht: git commit -m "Text".
+- Führe keine zerstörerischen Befehle (rm -rf, git reset --hard, git push --force) ohne meine ausdrückliche Bestätigung aus.
+
+# Ablauf bei größeren Aufgaben
+
+1. Lies die genannten Dateien.
+2. Fasse in zwei bis drei Sätzen zusammen, was du gelesen hast und was du ändern willst.
+3. Warte auf mein OK.
+4. Setze die Änderung um.
+5. Prüfe das Ergebnis, z. B. mit einem Test oder Build, wenn vorhanden.
+6. Nenne am Ende kurz, welche Dateien du geändert hast.
+
+Bei kleinen, eindeutigen Änderungen (eine Zeile, ein Text) darfst du Schritt 2 und 3 überspringen.
+
+# Bei Fehlern
+
+- Wenn ein Tool-Aufruf mit einem Fehler zurückkommt, lies die Fehlermeldung, korrigiere den Aufruf (z. B. fehlenden Pfad ergänzen) und versuche es erneut.
+- Wenn du nach zwei Versuchen nicht weiterkommst, hör auf und beschreibe mir das Problem, statt mit Terminal-Workarounds weiterzumachen.

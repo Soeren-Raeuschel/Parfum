@@ -31,44 +31,100 @@
 /* --- Tabs --- */
 .tabs {
   display: flex;
+  gap: 4px;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
-  padding: 0 16px;
+  scrollbar-width: none;
+}
+.tabs::-webkit-scrollbar {
+  display: none;
 }
 
 .tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   flex: 0 0 auto;
-  min-width: 44px;
-  max-width: 56px;
-  padding: 6px 4px;
+  width: auto;
+  min-width: max-content;
+  overflow: visible;
+  padding: 10px 14px;
   background: none;
   border: none;
   cursor: pointer;
-  font-size: 8px;
+  font-size: 9px;
   font-family: 'Georgia',serif;
   color: #7A7975;
-  border-bottom: 2px solid transparent;
-  transition: all .3s cubic-bezier(0.25,.46,.45,.94);
-  letter-spacing: 0px;
-  white-space: nowrap;
   font-weight: 400;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+  outline: none;
+  transition: color .2s ease;
 }
 
-.tab.active {
-  border-bottom: 2px solid #1A1A18;
+.tab .tab-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  line-height: 1;
+  transition: transform .22s ease-out, opacity .22s ease-out;
 }
 
-.tab.inactive {
-  color: #888780;
+.tab::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: #1A1A18;
+  transform: scaleX(0);
+  transform-origin: center;
+  transition: transform .22s ease-out;
 }
 
-.tab.textActive {
+.tab[aria-selected="true"] {
   color: #1A1A18;
   font-weight: 500;
 }
 
-.tab.textInactive {
-  color: #7A7975;
+.tab[aria-selected="true"]::after {
+  transform: scaleX(1);
+}
+
+/* Animationen für aktiven Tab */
+.tab[aria-selected="true"] .tab-icon {
+  animation: iconSlideIn .22s ease-out forwards;
+}
+
+@keyframes iconSlideIn {
+  from {
+    transform: translateX(-6px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+/* Reduced Motion */
+@media (prefers-reduced-motion: reduce) {
+  .tab .tab-icon,
+  .tab::after {
+    transition: none;
+    animation: none;
+  }
+  .tab[aria-selected="true"] .tab-icon {
+    transform: none;
+    opacity: 1;
+  }
+  .tab[aria-selected="true"]::after {
+    transform: scaleX(1);
+    transition: none;
+  }
 }
 
 /* --- Cards --- */
