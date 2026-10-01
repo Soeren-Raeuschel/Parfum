@@ -1539,39 +1539,10 @@ function _gtmParseHeaders(headers, modelId) {
         const v = obj[k];
         return v == null ? "" : String(v).slice(0, max);
       };
-      // Extract fields from KI response
-      const name = pick("name", 400);
-      const house = pick("house", 200);
-      const conc = pick("conc", 40);
-      const families = Array.isArray(obj.families) ? obj.families : (obj.family ? [obj.family] : []);
-      const top = pick("top", 2000);
-      const middle = pick("middle", 2000);
-      const base = pick("base", 2000);
-      const gender = pick("gender", 40);
-      
-      // --- Season Validation ---
-      let season = pick("season", 40);
-      
-      // If KI didn't provide a valid season or it's empty, infer from primary family
-      if (!season || season.trim() === "") {
-        const primaryFamily = families.length > 0 ? families[0] : "Sonstiges";
-        // Look up the season from FAMILY_CONTEXT
-        const familyContext = FAMILY_CONTEXT[primaryFamily];
-        if (familyContext && familyContext.seasons && familyContext.seasons.length > 0) {
-          season = familyContext.seasons[0]; // Use the first season from the context
-        }
-      }
-      
-      // If still no season, default to "Ganzjährig"
-      if (!season || season.trim() === "") {
-        season = "Ganzjährig";
-      }
-      
       return {
-        name, house, conc,
-        families,
-        top, middle, base,
-        season, gender,
+        name: pick("name", 400), house: pick("house", 200), conc: pick("conc", 40),
+        family: pick("family", 80), top: pick("top", 2000), middle: pick("middle", 2000), base: pick("base", 2000),
+        season: pick("season", 40), gender: pick("gender", 40),
       };
     }
     function parseTSV(text) {
@@ -1611,11 +1582,11 @@ function _gtmParseHeaders(headers, modelId) {
       const safeUrl = validateParfumoLookupUrl(url);
       const pageText = await fetchPageTextForLookup(safeUrl);
       const system = "Extrahiere Parfüm-Daten aus Seitentext. Nur JSON, kein Markdown.";
-      const user = `Parfumo-Seitentext. Extrahiere: Name, Haus, Konz, Familien (bis zu 3), Noten (Kopf/Herz/Basis), Saison, Geschlecht.
+      const user = `Parfumo-Seitentext. Extrahiere: Name, Haus, Konz, Familie, Noten (Kopf/Herz/Basis), Saison, Geschlecht.
 Duftpyramide: Noten zwischen Kopfnote/Herznote/Basisnote-Markierungen extrahieren.
 Mapping: Blumig→Floral, Holzig→Woody, Orientalisch→Oriental, Frisch→Fresh, Gourmand/Süß→Gourmand, Marin→Aquatisch.
 Nur JSON:
-{"name":"","house":"","conc":"EDP|EDT|Parfum|EDC|Extrait","families":["Floral","Woody","Gourmand"],"top":"","middle":"","base":"","season":"Frühling|Sommer|Herbst|Winter|Ganzjährig","gender":"Unisex|Feminin|Maskulin"}
+{"name":"","house":"","conc":"EDP|EDT|Parfum|EDC|Extrait","family":"Floral|Woody|Oriental|Fresh|Chypre|Fougère|Gourmand|Aquatisch|Sonstiges","top":"","middle":"","base":"","season":"Frühling|Sommer|Herbst|Winter|Ganzjährig","gender":"Unisex|Feminin|Maskulin"}
 
 ` + pageText;
       // Lookup needs the big model - small fallback can't handle 16k chars of page text.
@@ -1873,40 +1844,27 @@ Nur JSON:
     };
 
     async function fetchWeather(lat, lon) {
-      try {
-        const la = Number(lat), lo = Number(lon);
-        if (!Number.isFinite(la) || !Number.isFinite(lo)) throw new Error("Ungültige Koordinaten");
-        const clampLat = Math.max(-90, Math.min(90, la));
-        const clampLon = Math.max(-180, Math.min(180, lo));
-        const url = `https://api.open-meteo.com/v1/forecast?latitude=${encodeURIComponent(String(clampLat))}&longitude=${encodeURIComponent(String(clampLon))}&current=temperature_2m,relative_humidity_2m,weather_code&timezone=auto`;
-        const res = await fetch(url);
-        if (!res.ok) throw new Error(`Weather HTTP ${res.status}`);
-        const data = await res.json();
-        const c = data && data.current;
-        if (!c || typeof c.temperature_2m !== "number") throw new Error("Wetterdaten unvollständig");
-        const code = typeof c.weather_code === "number" ? c.weather_code : 0;
-        const hum = typeof c.relative_humidity_2m === "number" ? c.relative_humidity_2m : 50;
-        return {
-          temp: c.temperature_2m,
-          humidity: hum,
-          wmoCode: code,
-          weather: WMO_TO_WEATHER[code] ?? "cloudy",
-          effectiveWeather: c.temperature_2m < 8 ? "cold"
-            : c.temperature_2m > 26 ? "hot"
-              : WMO_TO_WEATHER[code] ?? "cloudy",
-        };
-      } catch (error) {
-        // Graceful Degradation: Bei Netzwerkfehler Fallback zurückgeben, statt die App abstürzen zu lassen
-        log('WARN', 'Wetter-Abruf fehlgeschlagen – verwende Fallback-Daten.', { error: error.message });
-        return {
-          temp: null,
-          humidity: null,
-          wmoCode: 0,
-          weather: "unknown",
-          effectiveWeather: "unknown",
-          error: error.message,
-        };
-      }
+      const la = Number(lat), lo = Number(lon);
+      if (!Number.isFinite(la) || !Number.isFinite(lo)) throw new Error("Ungültige Koordinaten");
+      const clampLat = Math.max(-90, Math.min(90, la));
+      const clampLon = Math.max(-180, Math.min(180, lo));
+      const url = `https://api.open-meteo.com/v1/forecast?latitude=${encodeURIComponent(String(clampLat))}&longitude=${encodeURIComponent(String(clampLon))}&current=temperature_2m,relative_humidity_2m,weather_code&timezone=auto`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`Weather HTTP ${res.status}`);
+      const data = await res.json();
+      const c = data && data.current;
+      if (!c || typeof c.temperature_2m !== "number") throw new Error("Wetterdaten unvollständig");
+      const code = typeof c.weather_code === "number" ? c.weather_code : 0;
+      const hum = typeof c.relative_humidity_2m === "number" ? c.relative_humidity_2m : 50;
+      return {
+        temp: c.temperature_2m,
+        humidity: hum,
+        wmoCode: code,
+        weather: WMO_TO_WEATHER[code] ?? "cloudy",
+        effectiveWeather: c.temperature_2m < 8 ? "cold"
+          : c.temperature_2m > 26 ? "hot"
+            : WMO_TO_WEATHER[code] ?? "cloudy",
+      };
     }
 
     // Intensitäts-Korrektur durch Luftfeuchtigkeit:
@@ -3565,19 +3523,12 @@ Nur JSON:
           const pos = await new Promise((res, rej) =>
             navigator.geolocation.getCurrentPosition(res, rej, { timeout: 8000 }));
           const data = await withRetry(() => fetchWeather(pos.coords.latitude, pos.coords.longitude));
-          // Prüfen, ob fetchWeather einen Fehler zurückgegeben hat (Graceful Degradation)
-          if (data.error) {
-            if (pushError) pushError(new Error(data.error), { hint: "Wetterdaten konnten nicht geladen werden. Bitte manuell auswählen." });
-            setWeatherData(null);
-          } else {
-            setWeatherData(data);
-            // Auto-apply weather
-            const humid = humidityIntensityMod(data.humidity);
-            if (humid) setIntensity(humid);
-          }
+          setWeatherData(data);
+          // Auto-apply weather
+          const humid = humidityIntensityMod(data.humidity);
+          if (humid) setIntensity(humid);
         } catch (e) {
           if (pushError) pushError(e, { hint: "Wetterdaten konnten nicht geladen werden. Bitte manuell auswählen." });
-          setWeatherData(null);
         }
         setWeatherLoading(false);
       }
