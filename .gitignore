@@ -5,6 +5,7 @@ dist/
 !.env.example
 .env.local
 *.local
+coverage/
 
 
 # --- VS Code & IDEs ---

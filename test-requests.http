@@ -1,12 +1,120 @@
 ### Test 1: Normaler API-Aufruf (Server online)
-GET http://localhost:3000/api/data
+GET http://localhost:5174/api/data
 Accept: application/json
 
 ### Test 2: Simulation Fehlerhafter Payload (XSS / Injection Test)
-POST http://localhost:3000/api/data
+POST http://localhost:5174/api/data
 Content-Type: application/json
 
 {
     "username": "<script>alert('xss')</script>",
     "input": "' OR '1'='1"
 }
+
+### Test 3: Netzwerkfehler (Offline-Simulation)
+GET http://localhost:5174/api/weather
+Accept: application/json
+# Erwartet: Netzwerkfehler → Graceful Degradation (Fallback auf localStorage)
+
+### Test 4: Rate Limiting (429 Status)
+GET http://localhost:5174/api/groq
+Accept: application/json
+# Erwartet: 429 → Countdown-Timer, Zwischengespeicherte Antworten
+
+### Test 5: CORS-Fehler (Ungültiger Origin)
+GET http://localhost:3000/api/data
+Origin: http://evil-site.com
+Accept: application/json
+# Erwartet: CORS-Block → Fallback auf Client-Validierung
+
+### Test 6: Timeout-Szenario
+GET http://localhost:3000/api/slow-endpoint
+Accept: application/json
+# Erwartet: Timeout nach 8s → Fallback-Daten
+
+### Test 7: Ungültige Daten (Validierung)
+POST http://localhost:3000/api/perfume
+Content-Type: application/json
+
+{
+    "name": "",
+    "family": "InvalidFamily",
+    "notes": null
+}
+# Erwartet: Validierungsfehler → Keine Speicherung, Fehlerhinweis
+
+### Test 8: Graceful Degradation (Fallback auf localStorage)
+GET http://localhost:3000/api/collection
+Accept: application/json
+# Erwartet: Bei Server-Fehler → localStorage-Daten als Fallback
+
+### Test 9: Ungültiger JSON-Payload
+POST http://localhost:3000/api/data
+Content-Type: application/json
+
+{invalid json syntax}
+# Erwartet: Parse-Error → Fehlerbehandlung ohne Absturz
+
+### Test 10: Leere Sammlung (Initial State)
+GET http://localhost:3000/api/items
+Accept: application/json
+# Erwartet: Leere Liste → UI zeigt Empty-State
+
+### Test 11: Groq API Limit (429)
+POST http://localhost:3000/api/groq
+Content-Type: application/json
+
+{"prompt": "test"}
+# Erwartet: 429 → Countdown, Wiederholung nach Timeout
+
+### Test 12: CORS Preflight (OPTIONS)
+OPTIONS http://localhost:3000/api/data
+Origin: http://localhost:5173
+Access-Control-Request-Method: POST
+Access-Control-Request-Headers: Content-Type
+# Erwartet: 204 No Content → CORS erlaubt
+
+### Test 13: Ungültiger Content-Type
+POST http://localhost:3000/api/data
+Content-Type: text/plain
+
+plain text data
+# Erwartet: 415 Unsupported Media Type → Fehlerbehandlung
+
+### Test 14: Server nicht erreichbar (DNS-Fehler)
+GET http://localhost:9999/api/data
+Accept: application/json
+# Erwartet: DNS-Fehler → Graceful Degradation, UI-Hinweis
+
+### Test 15: Große Payload (Payload Too Large)
+POST http://localhost:3000/api/perfume
+Content-Type: application/json
+
+{"data": "x".repeat(100000)}
+# Erwartet: 413 Payload Too Large → Fehlerhinweis
+
+### Test 16: Session-Ablauf (401 Unauthorized)
+GET http://localhost:3000/api/protected
+Accept: application/json
+# Erwartet: 401 → Redirect zu Login, Session-Reset
+
+### Test 17: Fallback auf localStorage (Network Error)
+GET http://localhost:3000/api/sync
+Accept: application/json
+# Erwartet: Network Error → Automatischer Fallback auf localStorage-Daten
+
+### Test 18: Rate Limit Headers (Retry-After)
+GET http://localhost:3000/api/rate-limited
+Accept: application/json
+# Erwartet: 429 mit Retry-After-Header → Countdown-Timer initialisieren
+
+### Test 19: CORS-Block (Ungültige Origin)
+GET http://localhost:3000/api/data
+Origin: http://malicious.example.com
+Accept: application/json
+# Erwartet: CORS-Block → Error-Toast, Fallback auf Client-Daten
+
+### Test 20: Ungültige Koordinaten (Geolocation)
+GET http://localhost:3000/api/weather?lat=999&lng=999
+Accept: application/json
+# Erwartet: Invalid Coordinates → Fehler, Fallback auf manuelle Eingabe

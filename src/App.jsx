@@ -3557,6 +3557,11 @@ Nur JSON:
       const [worn, setWorn] = useState({});
       const [weatherData, setWeatherData] = useState(null);
       const [weatherLoading, setWeatherLoading] = useState(false);
+       const [toast, setToast] = useState("");
+       const showToast = useCallback((msg) => {
+         setToast(msg);
+         setTimeout(() => setToast(""), 2200);
+       }, []);
 
       async function fetchAutoWeather() {
         if (!navigator.geolocation) return;
@@ -3568,6 +3573,7 @@ Nur JSON:
           // Prüfen, ob fetchWeather einen Fehler zurückgegeben hat (Graceful Degradation)
           if (data.error) {
             if (pushError) pushError(new Error(data.error), { hint: "Wetterdaten konnten nicht geladen werden. Bitte manuell auswählen." });
+            showToast("Wetter konnte nicht geladen werden");
             setWeatherData(null);
           } else {
             setWeatherData(data);
@@ -3596,7 +3602,8 @@ Nur JSON:
       const [aiLoading, setAiLoading] = useState(false);
       const [aiErr, setAiErr] = useState("");
       const tog = k => setOpen(o => ({ ...o, [k]: !o[k] }));
-      const groqCountdown = useGroqCountdown(); // Sekunden bis Rate-Limit abläuft
+      const groqCountdownVal = useGroqCountdown(); // Sekunden bis Rate-Limit abläuft
+       const [reasoningChars, setReasoningChars] = useState(0); // Zeichenzähler für KI-Reasoning-Validierung
 
       useEffect(() => {
         const h = new Date().getHours();
@@ -3682,8 +3689,9 @@ Antworte NUR mit JSON: {"occasion":"...","mood":"...","timeOfDay":"...","intensi
             setWorn({});
             setLoadingRecs(false);
           }, 300);
-        } catch(e) {
+                } catch(e) {
           setAiErr(e.message);
+          showToast(e.message);
         }
         setAiLoading(false);
       }
@@ -3955,7 +3963,7 @@ Antworte NUR mit JSON: {"occasion":"...","mood":"...","timeOfDay":"...","intensi
                   ))}
                 </div>
 
-                <div style={{ display: "flex", gap: 8 }}>
+                <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
                   <input
                     value={aiText}
                     onChange={e => setAiText(e.target.value)}
@@ -3964,7 +3972,11 @@ Antworte NUR mit JSON: {"occasion":"...","mood":"...","timeOfDay":"...","intensi
                     autoFocus
                     className="inp" style={{ ...S.inp, flex: 1, fontSize: 13, borderRadius: 10,
                       border: "1.5px solid #534AB7", background: "#fff" }}
+                    maxLength={500}
                   />
+                  <div style={{ fontSize: 10, color: aiText.length > 450 ? "#E24B4A" : "#B4B2A9", marginBottom: 10, minWidth: "36px", textAlign: "right" }}>
+                    {aiText.length}/500
+                  </div>
                   <button onClick={handleAiGenerate} disabled={aiLoading || !aiText.trim()}
                     style={{ ...S.btn("pri"), padding: "12px 16px", borderRadius: 10, fontSize: 12,
                       opacity: aiLoading || !aiText.trim() ? 0.5 : 1,
@@ -3973,10 +3985,10 @@ Antworte NUR mit JSON: {"occasion":"...","mood":"...","timeOfDay":"...","intensi
                     {aiLoading ? "…" : "✦ Los"}
                   </button>
                 </div>
-                {groqCountdown > 0 && (
+                {groqCountdownVal > 0 && (
                   <div style={{ fontSize: 11, color: "#BA7517", marginTop: 8, display: "flex", alignItems: "center", gap: 6 }}>
                     <span>⏱</span>
-                    <span>API-Limit – verfügbar in <strong>{groqCountdown}s</strong>. Zwischengespeicherte Antworten werden genutzt.</span>
+                    <span>API-Limit – verfügbar in <strong>{groqCountdownVal}s</strong>. Zwischengespeicherte Antworten werden genutzt.</span>
                   </div>
                 )}
                 {aiErr && !aiErr.includes("RATE_LIMIT") && <div style={{ fontSize: 11, color: "#E24B4A", marginTop: 8 }}>{aiErr}</div>}
@@ -6175,7 +6187,7 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
                     {wishDetails.conc && <div style={{ background: "#FAFAF8", borderRadius: 8, padding: 10, textAlign: "center" }}><div style={{ fontSize: 9, color: "#B4B2A9", marginBottom: 2 }}>KONZ.</div><div style={{ fontSize: 11, color: "#1A1A18" }}>{wishDetails.conc}</div></div>}
                     {wishDetails.gender && <div style={{ background: "#FAFAF8", borderRadius: 8, padding: 10, textAlign: "center" }}><div style={{ fontSize: 9, color: "#B4B2A9", marginBottom: 2 }}>GENDER</div><div style={{ fontSize: 11, color: "#1A1A18" }}>{wishDetails.gender}</div></div>}
                   </div>
-                  {selectedWish.note && <div style={{ background: "#FAFAF8", borderRadius: 12, padding: 14, marginBottom: 16 }}><p style={{ fontSize: 12, fontStyle: "italic", color: "#888780", margin: 0, fontFamily: "'Georgia',serif", lineHeight: 1.5 }}>"{selectedWish.note}"</p></div>}
+                  {sedelectedWish.note && <div style={{ background: "#FAFAF8", borderRadius: 12, padding: 14, marginBottom: 16 }}><p style={{ fontSize: 12, fontStyle: "italic", color: "#888780", margin: 0, fontFamily: "'Georgia',serif", lineHeight: 1.5 }}>"{selectedWish.note}"</p></div>}
                   <div style={{ display: "flex", gap: 10 }}>
                     {!alreadyOwned && <button onClick={() => { moveToCollection({ ...selectedWish, ...wishDetails }); setSelectedWish(null); setWishDetails(null); }} className="btn" style={{ flex: 1, ...S.btn("pri"), padding: "14px", borderRadius: 10, fontSize: 13 }}>→ Zur Sammlung</button>}
                     {selectedWish.url && <a href={selectedWish.url} target="_blank" rel="noopener noreferrer" style={{ flex: 1, ...S.btn("out"), padding: "14px", borderRadius: 10, fontSize: 13, textAlign: "center", textDecoration: "none", color: "#1A1A18" }}>Parfumo ↗</a>}
@@ -7428,6 +7440,25 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
         // user closes the app within the 500 ms debounce window.
         try { localStorage.setItem(KEYS.log, JSON.stringify(next)); } catch { }
         dispatch({ type: 'SET_TOAST', payload: { msg: "✓ Getragen", show: true } });
+        setTimeout(() => dispatch({ type: 'SET_TOAST', payload: { msg: "", show: false } }), 2000);
+      }, [state.log]);
+      // Undo: removes the last log entry (for user mistakes)
+      const handleUndoLog = useCallback(() => {
+        if (state.log.length === 0) return;
+        const next = state.log.slice(0, -1);
+        dispatch({ type: 'SET_LOG', payload: next });
+        try { localStorage.setItem(KEYS.log, JSON.stringify(next)); } catch { }
+        dispatch({ type: 'SET_TOAST', payload: { msg: "✕ Letzter Eintrag entfernt", show: true } });
+        setTimeout(() => dispatch({ type: 'SET_TOAST', payload: { msg: "", show: false } }), 2000);
+      }, [state.log]);
+      // Replay: re-logs the last entry (for accidental undo)
+      const handleReplayLog = useCallback(() => {
+        if (state.log.length === 0) return;
+        const last = state.log[state.log.length - 1];
+        const next = [...state.log, { id: last.id, ts: Date.now() }].slice(-1000);
+        dispatch({ type: 'SET_LOG', payload: next });
+        try { localStorage.setItem(KEYS.log, JSON.stringify(next)); } catch { }
+        dispatch({ type: 'SET_TOAST', payload: { msg: "✓ Eintrag wiederholt", show: true } });
         setTimeout(() => dispatch({ type: 'SET_TOAST', payload: { msg: "", show: false } }), 2000);
       }, [state.log]);
       const handleExport = useCallback(() => downloadTSV(state.items), [state.items]);
