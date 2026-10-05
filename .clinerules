@@ -1,43 +1,60 @@
-# Allgemeine Arbeitsweise
+# Projekt
+Webapp mit React und JavaScript, gebaut mit Vite, gestylt mit Tailwind CSS.
+Node/npm für Abhängigkeiten. Dev-Server: npm run dev. Build: npm run build (Ausgabe in dist/).
+Deployment: Netlify. Backend: Supabase (später, noch nicht angebunden).
+Zusätzlich: Python-Skripte und Testdateien.
+Code auf Englisch, Kommentare auf Deutsch.
+Einstiegspunkte: index.html (Projektwurzel) und src/main.jsx bzw. src/main.js.
 
-- Antworte auf Deutsch.
-- Arbeite nur an dem, was in der Aufgabe steht. Ändere nichts darüber hinaus.
-- Wenn etwas unklar ist, frage nach, statt zu raten.
+# Arbeitsweise
+1. Lies zuerst alle relevanten Dateien mit read_file, bevor du etwas änderst.
+2. Plan-Modus: nummerierter Plan mit Dateinamen, noch keine Änderungen.
+3. Act-Modus: kleine, gezielte Änderungen, eine Aufgabe nach der anderen.
+4. Erkläre größere Änderungen vorher kurz.
+5. Frage nach, wenn etwas unklar ist, statt zu raten.
 
-# Dateien lesen
+# Werkzeuge
+- Lesen: nur read_file. Ändern: replace_in_file oder write_to_file.
+- execute_command nur für npm install, Starten, Tests und Python-Skripte.
+- Niemals cat, sed, echo oder > zum Lesen oder Schreiben von Dateien.
 
-- Lies jede Datei, die du ändern willst, vorher vollständig mit read_file.
-- Ändere niemals eine Datei, die du in dieser Aufgabe noch nicht gelesen hast.
-- Dateien, die mit @ genannt sind, hast du bereits im Kontext. Lies andere Dateien nur, wenn sie für die Aufgabe nötig sind.
-- Bei sehr großen Dateien lies gezielt die relevanten Abschnitte und sag mir, welche du gelesen hast.
+# Vite
+- Umgebungsvariablen im Frontend nur mit Präfix VITE_ (z. B. VITE_SUPABASE_URL),
+  Zugriff über import.meta.env, nicht process.env.
+- Statische Dateien, die unverändert ausgeliefert werden, liegen in public/.
+- Konfiguration in vite.config.js nur nach Rückfrage ändern.
+- Dev-Server nicht selbst neu starten oder mehrfach starten, wenn er schon läuft.
 
-# Dateien bearbeiten
+# Supabase (sobald angebunden)
+- Zugriff nur über einen zentralen Client (z. B. src/lib/supabase.js).
+- URL und anon-Key aus import.meta.env.VITE_..., nie hartcodieren.
+- Im Frontend nur den anon-Key verwenden, niemals den service_role-Key
+  (alles mit VITE_ Präfix landet im Browser und ist öffentlich sichtbar).
+- Row Level Security nicht abschalten.
 
-- Bearbeite Dateien ausschließlich mit den Datei-Tools (write_to_file, replace_in_file).
-- Nutze niemals Terminal-Befehle wie sed, echo, cat, tee, nano, vim oder edit, um Dateien zu erstellen oder zu ändern.
-- Gib bei jedem Datei-Tool-Aufruf immer den vollständigen Pfad relativ zum Projektordner an. Ein Aufruf ohne path ist ungültig und muss vor dem Senden korrigiert werden.
-- Bevorzuge kleine, gezielte Änderungen mit replace_in_file. Schreibe eine ganze Datei nur neu, wenn es wirklich nötig ist.
-- Behalte den bestehenden Code-Stil, die Einrückung und die Namensgebung bei.
+# React und Tailwind
+- Funktionale Komponenten mit Hooks, keine Klassenkomponenten.
+- Styling ausschließlich mit Tailwind-Klassen, kein neues CSS ohne Rückfrage.
+- Bestehende Komponentenstruktur und Namensgebung beibehalten.
+- Keine neuen npm-Pakete ohne Rückfrage.
 
-# Terminal
+# Supabase (sobald angebunden)
+- Zugriff nur über einen zentralen Client (z. B. src/lib/supabase.js).
+- Keys nur über Umgebungsvariablen (.env lokal, Vercel/Netlify im Dashboard). Nie hartcodieren.
+- Im Frontend nur den anon-Key verwenden, niemals den service_role-Key.
+- Row Level Security nicht abschalten.
 
-- Nutze das Terminal nur für Befehle wie npm, pip, git, Build-Skripte und Tests.
-- Öffne im Terminal keine interaktiven Programme (Editoren, Pager, Abfragen, die auf Eingabe warten).
-- Nutze bei Git immer eine Nachricht: git commit -m "Text".
-- Führe keine zerstörerischen Befehle (rm -rf, git reset --hard, git push --force) ohne meine ausdrückliche Bestätigung aus.
+# Python-Skripte
+- Eigenständig lauffähig, mit kurzem Docstring zu Zweck und Aufruf.
+- Eingabe- und Ausgabedateien nicht überschreiben, ohne es zu sagen.
 
-# Ablauf bei größeren Aufgaben
+# Tests
+- Vorhandene Tests nicht löschen oder abschwächen, damit sie grün werden.
+- Nach Änderungen die betroffenen Tests ausführen und das Ergebnis melden.
 
-1. Lies die genannten Dateien.
-2. Fasse in zwei bis drei Sätzen zusammen, was du gelesen hast und was du ändern willst.
-3. Warte auf mein OK.
-4. Setze die Änderung um.
-5. Prüfe das Ergebnis, z. B. mit einem Test oder Build, wenn vorhanden.
-6. Nenne am Ende kurz, welche Dateien du geändert hast.
+# Nicht anfassen
+- .env, package-lock.json, node_modules/
+- vite.config.js und netlify.toml nur nach Rückfrage ändern.
 
-Bei kleinen, eindeutigen Änderungen (eine Zeile, ein Text) darfst du Schritt 2 und 3 überspringen.
-
-# Bei Fehlern
-
-- Wenn ein Tool-Aufruf mit einem Fehler zurückkommt, lies die Fehlermeldung, korrigiere den Aufruf (z. B. fehlenden Pfad ergänzen) und versuche es erneut.
-- Wenn du nach zwei Versuchen nicht weiterkommst, hör auf und beschreibe mir das Problem, statt mit Terminal-Workarounds weiterzumachen.
+# Abschluss
+Nach jeder Änderung kurz auflisten, welche Dateien geändert wurden und was getestet wurde.

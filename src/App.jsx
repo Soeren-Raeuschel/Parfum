@@ -1458,83 +1458,71 @@ Nur JSON:
   return normalizeLookupPayload(parsed);
 }
 
-// ── Styles (zentralisiert in styles.css via @apply, mit dynamischen Ausnahmen) ────
+// ── Styles (zentralisiert in styles.css, S-Objekt gibt nur Klassen zurück) ─────
 const S = {
-  // Statische Styles - geben Klassen zurück für className
+  // Statische Klassennamen
   app: "app",
   hdr: "hdr",
   tabs: "tabs",
   body: "body",
   card: "card",
   lbl: "lbl",
-  
-  // Dynamische Styles - geben style-Objekte zurück (können nicht vollständig klassifiziert werden)
-  tab: (a) => ({
-    // Basis-Klasse wird über className toegepast, aktive/inaktive Zustände über Inline-Style
-    borderBottom: `2px solid ${a ? "#1A1A18" : "transparent"}`, 
-    color: a ? "#1A1A18" : "#7A7975",
-    fontWeight: a ? 500 : 400
-  }),
-  dtab: (a) => ({
-    color: a ? "#1A1A18" : "#888780",
-    borderBottom: `2px solid ${a ? "#1A1A18" : "transparent"}`
-  }),
-  pill: (c) => ({
-    background: c + "22",  // Transparenter Hintergrund mit Farbe
-    color: c,
-    borderRadius: 12
-  }),
-  inp: {},  // Keine dynamischen Styles nötig - komplett in styles.css
-  ta: {},   // Keine dynamischen Styles nötig - komplett in styles.css
-  btn: (v) => {
-    // Basis-Styles über className, variant-spezifische über Inline-Style
-    let style = {};
-    if (v === "pri") {
-      style.background = "#1A1A18";
-      style.color = "#fff";
-      style.boxShadow = "0 4px 15px rgba(26,26,24,0.2)";
-    } else if (v === "out") {
-      style.border = "1px solid #D3D1C7";
-      style.background = "transparent";
-      style.color = "#1A1A18";
-    } else {
-      // Standard/secondary
-      style.background = "#F1EFE8";
-      style.color = "#1A1A18";
+
+  // Tab-Klasse (aktiv/inaktiv via aria-selected)
+  tab: (active) => ({ className: active ? "tab active" : "tab" }),
+  dtab: (active) => ({ className: active ? "tab active" : "tab" }),
+
+  // Pill: CSS-Klasse, Farbe per CSS-Variable (in styles.css .pill genutzt)
+  pill: (color) => ({
+    style: {
+      '--pill-bg': color + "22",  // CSS Variable für background
+      '--pill-c': color            // CSS Variable für color
     }
-    
-    // Größe
-    if (v === "sm") {
-      style.padding = "6px 12px";
-      style.minHeight = "36px";
-    } else if (v === "lg") {
-      style.padding = "14px 24px";
-      style.minHeight = "44px";
-    } else {
-      style.padding = "10px 16px";
-      style.minHeight = "44px";
-    }
-    
-    return style;
+  }),
+
+  // Inline-Style-Objekte für bestehende style-Spreads
+  inp: {
+    width: "100%", padding: "10px 12px", border: "1px solid #D3D1C7", borderRadius: 8,
+    fontSize: 14, fontFamily: "'Georgia',serif", background: "#fff", color: "#1A1A18",
+    boxSizing: "border-box", outline: "none"
   },
+  ta: {
+    width: "100%", padding: "10px 12px", border: "1px solid #D3D1C7", borderRadius: 8,
+    fontSize: 13, fontFamily: "'Georgia',serif", background: "#fff", color: "#1A1A18",
+    boxSizing: "border-box", resize: "vertical", minHeight: 80, lineHeight: 1.6, outline: "none"
+  },
+
+  // Button-Varianten als gültige Inline-Style-Objekte
+  btn: (v) => {
+    const base = {
+      minHeight: 44, borderRadius: 8, border: "none", cursor: "pointer", fontSize: 13,
+      fontFamily: "'Georgia',serif", padding: "10px 16px", background: "#F1EFE8", color: "#1A1A18"
+    };
+    if (v === "pri") return { ...base, background: "#1A1A18", color: "#fff", boxShadow: "0 4px 15px rgba(26,26,24,0.2)" };
+    if (v === "out") return { ...base, background: "transparent", border: "1px solid #D3D1C7" };
+    if (v === "sm") return { ...base, padding: "6px 12px", minHeight: 36 };
+    if (v === "lg") return { ...base, padding: "14px 24px" };
+    return base;
+  },
+
+  // Chip: active/inactive via className .chip/.chip.active, Styles via S.chip()
   chip: (a, c) => ({
     background: a ? (c || "#1A1A18") : "transparent",
     color: a ? "#fff" : "#1A1A18",
     border: `1px solid ${a ? (c || "#1A1A18") : "#D3D1C7"}`
   }),
-  skeleton: (w = "100%", h = 12) => ({
-    width: w,
-    height: `${h}px`
-  })
+
+  // Skeleton: Klasse wird direkt am Element verwendet
+  skeleton: () => "skeleton"
 };
 
 // ── FamilyPill: shared family pill renderer (idx === 0 ? filled : outlined) ──────
 function FamilyPill({ family, idx }) {
   const color = FAM_COLORS[family] || "#888";
   if (idx === 0) {
-    return <span style={S.pill(color)}>{family}</span>;
+    return <span className="pill" style={{ background: color + "22", color }}>{family}</span>;
   }
-  return <span style={{ fontSize: 9, padding: "2px 8px", borderRadius: 12, border: `1px solid ${color}`, background: "transparent", color, fontWeight: 400 }}>{family}</span>;
+  return <span className="pill" style={{ fontSize: 9, padding: "2px 8px", borderRadius: 12, border: `1px solid ${color}`, background: "transparent", color, fontWeight: 400 }}>{family}</span>;
 }
 
 // ── Pull-to-refresh component ─────────────────────────────────────────────────
@@ -1746,7 +1734,7 @@ function WeatherWidget({ weatherData, onUse }) {
           <div style={{ fontSize: 10, color: "#888780" }}>Automatisch erkanntes Wetter wird berücksichtigt</div>
         </div>
       </div>
-      <button onClick={onUse} className="btn" style={{ ...S.btn("pri"), fontSize: 10, padding: "5px 10px", borderRadius: 16 }}>
+      <button onClick={onUse} className="btn btn-pri" style={{ fontSize: 10, padding: "5px 10px", borderRadius: 16 }}>
         Anwenden
       </button>
     </div>
@@ -2033,13 +2021,13 @@ function DuftDNASection({ items, log }) {
         <div className="lbl">DUFT-DNA RADAR</div>
         <div style={{ display: "flex", gap: 6 }}>
           <button type="button" onClick={() => setWeighted(false)}
-            className="btn"
-            style={{ ...S.btn("out"), fontSize: 10, padding: "5px 10px", borderRadius: 16, color: "#E24B4A", borderColor: "#F09595" }}>
+            className="btn btn-out"
+            style={{ fontSize: 10, padding: "5px 10px", borderRadius: 16, color: "#E24B4A", borderColor: "#F09595" }}>
             Sammlung
           </button>
           <button type="button" onClick={() => setWeighted(true)}
-            className="btn"
-            style={{ ...S.btn("out"), fontSize: 10, padding: "5px 10px", borderRadius: 16, color: "#E24B4A", borderColor: "#F09595" }}>
+            className="btn btn-out"
+            style={{ fontSize: 10, padding: "5px 10px", borderRadius: 16, color: "#E24B4A", borderColor: "#F09595" }}>
             Nutzung
           </button>
         </div>
@@ -2212,7 +2200,7 @@ function DeclutterTab({ items, log, onDelete, onSelectPerfume, onUpdate, declutt
                 <button type="button" onClick={() => onSelectPerfume && onSelectPerfume(p.id)} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontSize: 14, fontFamily: "inherit", color: "inherit", textAlign: "left", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "block", width: "100%" }}>{p.name}</button>
                 <div style={{ fontSize: 11, color: "#888780" }}>{p.house} · {p.format}</div>
               </div>
-              <span className="pill" style={{ ...S.pill(effectiveColor), fontSize: 10, flexShrink: 0, marginLeft: 8 }}>{effectiveLabel}</span>
+              <span className="pill" style={{ '--pill-bg': effectiveColor + "22", '--pill-c': effectiveColor, fontSize: 10, flexShrink: 0, marginLeft: 8 }}>{effectiveLabel}</span>
             </div>
             <div style={{ fontSize: 11, color: "#888780", marginBottom: 10, fontStyle: "italic" }}>{p._reason}</div>
 
@@ -2256,8 +2244,8 @@ function DeclutterTab({ items, log, onDelete, onSelectPerfume, onUpdate, declutt
       })}
       {visible.length > declDisplayCount && (
         <button onClick={() => setDeclDisplayCount(c => c + 15)}
-          className="btn"
-          style={{ ...S.btn("out"), width: "100%", fontSize: 12, padding: "12px", marginBottom: 8 }}>
+          className="btn btn-out"
+          style={{ width: "100%", fontSize: 12, padding: "12px", marginBottom: 8 }}>
           Mehr anzeigen ({visible.length - declDisplayCount} weitere)
         aria-label="Mehr Parfüms anzeigen"
         </button>
@@ -2334,7 +2322,7 @@ function OnboardingModal({ onComplete }) {
       body: (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
           {ONBOARD_STYLES.map(s => (
-            <button key={s.id} onClick={() => toggle(styles, setStyles, s.id)} aria-label={`Stil: ${s.label}`}
+            <button key={s.id} onClick={() => toggle(styles, setStyles, s.id)} aria-label={`Stil: ${s.label}`} className={`chip ${styles.includes(s.id) ? "active" : ""}`}
               style={{
                 ...S.chip(styles.includes(s.id)), padding: "12px", borderRadius: 10,
                 display: "flex", flexDirection: "column", alignItems: "center", gap: 4, textAlign: "center"
@@ -2352,7 +2340,7 @@ function OnboardingModal({ onComplete }) {
       body: (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 7 }}>
           {ONBOARD_FAMILIES.map(f => (
-            <button key={f.id} onClick={() => toggle(favFamilies, setFavFamilies, f.id)} aria-label={`Duftfamilie: ${f.label}`} className="chip"
+            <button key={f.id} onClick={() => toggle(favFamilies, setFavFamilies, f.id)} aria-label={`Duftfamilie: ${f.label}`} className={`chip ${favFamilies.includes(f.id) ? "active" : ""}`}
               style={{
                 ...S.chip(favFamilies.includes(f.id), "#534AB7"), padding: "10px 12px", borderRadius: 10,
                 display: "flex", alignItems: "center", gap: 8, textAlign: "left", fontSize: 12
@@ -2370,7 +2358,7 @@ function OnboardingModal({ onComplete }) {
       body: (
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
           {ONBOARD_OCC.map(o => (
-            <button key={o.id} onClick={() => toggle(occs, setOccs, o.id)} aria-label={`Anlass: ${o.label}`} className="chip"
+            <button key={o.id} onClick={() => toggle(occs, setOccs, o.id)} aria-label={`Anlass: ${o.label}`} className={`chip ${occs.includes(o.id) ? "active" : ""}`}
               style={{
                 ...S.chip(occs.includes(o.id)), padding: "10px", borderRadius: 8,
                 textAlign: "center", fontSize: 12
@@ -2983,7 +2971,7 @@ function SmartMatchMode({ items }) {
           <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: 10 }}>
             {((selectedP.families && selectedP.families.length > 0)
               ? selectedP.families : [selectedP.family || "Sonstiges"]).map((f,i) => (
-              <span key={f} style={{ ...S.pill(FAM_COLORS[f] || "#888"), fontSize: 10, opacity: i === 0 ? 1 : 0.7 }}>{f}</span>
+              <span key={f} className="pill" style={{ fontSize: 10, opacity: i === 0 ? 1 : 0.7, '--pill-bg': (FAM_COLORS[f] || "#888") + "22", '--pill-c': FAM_COLORS[f] || "#888" }}>{f}</span>
             ))}
           </div>
         )}
@@ -3032,7 +3020,7 @@ function SmartMatchMode({ items }) {
             </div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
               {results.inputFamilies.map(f => (
-                <span key={f} style={{ ...S.pill(FAM_COLORS[f] || "#888"), fontSize: 11 }}>{f}</span>
+                <span key={f} className="pill" style={{ fontSize: 11, '--pill-bg': (FAM_COLORS[f] || "#888") + "22", '--pill-c': FAM_COLORS[f] || "#888" }}>{f}</span>
               ))}
             </div>
             {results.inputAllNotes.length > 0 && (
@@ -3063,7 +3051,7 @@ function SmartMatchMode({ items }) {
                     <div style={{ fontSize: 10, color: "#888780", marginBottom: 5 }}>{p.house}</div>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 4 }}>
                       {collFams.map((f, i) => (
-                        <span key={f} style={{ ...S.pill(FAM_COLORS[f] || "#888"), fontSize: 10, opacity: i === 0 ? 1 : 0.65 }}>{f}</span>
+                        <span key={f} className="pill" style={{ fontSize: 10, opacity: i === 0 ? 1 : 0.65, background: (FAM_COLORS[f] || "#888") + "22", color: FAM_COLORS[f] || "#888" }}>{f}</span>
                       ))}
                     </div>
                     <div style={{ fontSize: 11, color: "#888780", fontStyle: "italic", lineHeight: 1.5 }}>
@@ -3162,7 +3150,7 @@ function LayeringTab({ items }) {
     return (
       <div style={{ display: "flex", flexWrap: "wrap", gap: 4, justifyContent: "center", marginTop: 4 }}>
         {fams.map((f, idx) => (
-          <span key={f} style={{ ...S.pill(FAM_COLORS[f] || "#888"), opacity: idx === 0 ? 1 : 0.65 }}>{f}</span>
+          <span key={f} className="pill" style={{ opacity: idx === 0 ? 1 : 0.65, '--pill-bg': (FAM_COLORS[f] || "#888") + "22", '--pill-c': FAM_COLORS[f] || "#888" }}>{f}</span>
         ))}
       </div>
     );
@@ -3268,7 +3256,7 @@ function LayeringTab({ items }) {
               <div className="lbl">BRÜCKEN-NOTEN (was du wirklich riechst)</div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                 {noteAna.bridgeNotes.map(n => (
-                  <span key={n} style={{ ...S.pill("#534AB7"), fontSize: 11, padding: "3px 9px" }}>{n}</span>
+                  <span key={n} className="pill" style={{ fontSize: 11, padding: "3px 9px", '--pill-bg': "#534AB722", '--pill-c': "#534AB7" }}>{n}</span>
                 ))}
               </div>
               <div style={{ fontSize: 10, color: "#888780", marginTop: 6 }}>
@@ -3283,7 +3271,7 @@ function LayeringTab({ items }) {
               <div className="lbl">GEMEINSAME NOTEN ({noteAna.shared.length})</div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                 {noteAna.shared.slice(0, 10).map(n => (
-                  <span key={n} style={{ ...S.pill("#1D9E75"), fontSize: 11, padding: "3px 9px" }}>{n}</span>
+                  <span key={n} className="pill" style={{ fontSize: 11, padding: "3px 9px", '--pill-bg': "#1D9E7522", '--pill-c': "#1D9E75" }}>{n}</span>
                 ))}
                 {noteAna.shared.length > 10 && (
                   <span style={{ fontSize: 10, color: "#888780", alignSelf: "center" }}>+{noteAna.shared.length - 10} weitere</span>
@@ -3609,8 +3597,8 @@ const recCtx = useMemo(() => {
               {families.map((f, idx) => (
                 <FamilyPill key={f} family={f} idx={idx} />
               ))}
-              <span style={S.pill("#888780")}>{p.season}</span>
-              <span style={S.pill("#888780")}>{p.format}</span>
+              <span className="pill" style={{ '--pill-bg': "#88878022", '--pill-c': "#888780" }}>{p.season}</span>
+              <span className="pill" style={{ '--pill-bg': "#88878022", '--pill-c': "#888780" }}>{p.format}</span>
             </div>
             {(p.rating || 0) > 0 && <Stars rating={p.rating} size={12} />}
             {/* Begründung */}
@@ -3660,8 +3648,8 @@ const recCtx = useMemo(() => {
           <div><div className="lbl">STIMMUNG</div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8 }}>
               {MOODS.map(m => (
-                <button key={m.id} onClick={() => setMood(m.id)} aria-label={`Stimmung: ${m.label}`} className="chip"
-                  style={{ ...S.chip(mood === m.id), padding: "10px 6px", textAlign: "center", borderRadius: 10 }}>
+                <button key={m.id} onClick={() => setMood(m.id)} aria-label={`Stimmung: ${m.label}`} className={`chip ${mood === m.id ? "active" : ""}`}
+                  style={{ padding: "10px 6px", textAlign: "center", borderRadius: 10 }}>
                   <div style={{ fontSize: 16, marginBottom: 2 }}>{m.icon}</div>
                   <div style={{ fontSize: 10 }}>{m.label}</div>
                 </button>
@@ -5069,8 +5057,8 @@ function DetailView({ perfume, items, log, notes, onClose, onDelete, onUpdate, o
               className="inp" style={{ ...S.inp, fontSize: 16, fontWeight: 500, marginBottom: 6 }} />
             <BrandInfo house={local.house} />
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8, marginBottom: 8 }}>
-              <span style={S.pill("#534AB7")}>{local.conc || "?"}</span>
-              <span style={S.pill("#888")}>{local.format || "?"}</span>
+              <span className="pill" style={{ '--pill-bg': "#534AB722", '--pill-c': "#534AB7" }}>{local.conc || "?"}</span>
+              <span className="pill" style={{ '--pill-bg': "#88888822", '--pill-c': "#888" }}>{local.format || "?"}</span>
               {((local.families && local.families.length > 0) ? local.families : [local.family || "Sonstiges"]).map((f, idx) => (
                 <FamilyPill key={f} family={f} idx={idx} />
               ))}
@@ -5155,7 +5143,7 @@ function DetailView({ perfume, items, log, notes, onClose, onDelete, onUpdate, o
         </div>
         {/* Familie + Saison */}
         <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap", alignItems: "center" }}>
-          <span style={{ ...S.pill(FAM_COLORS[local.family] || "#888"), fontSize: 10 }}>{local.family || "Sonstiges"}</span>
+          <span className="pill" style={{ fontSize: 10, background: (FAM_COLORS[local.family] || "#888") + "22", color: FAM_COLORS[local.family] || "#888" }}>{local.family || "Sonstiges"}</span>
           <span style={{ fontSize: 10, color: "#888780", padding: "3px 0" }}>{local.season || "Ganzjährig"}</span>
           {(local.note_categories || []).map(c => (
             <span key={c} style={{
@@ -5348,7 +5336,7 @@ const PerfumeCard = React.memo(function PerfumeCard({ p, notes, onClick, noteFie
           <div style={{ fontSize: 14, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.name}</div>
                         <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2, flexWrap: "wrap" }}>
             <span style={{ fontSize: 10, color: "#888780" }}>{p.house}</span>
-            <span style={{ ...S.pill(CONC_COLORS[p.conc] || "#888"), fontSize: 10, padding: "2px 8px", fontWeight: 700, border: `1px solid ${CONC_COLORS[p.conc] || "#888"}` }}>{p.conc}</span>
+            <span className="pill" style={{ fontSize: 10, padding: "2px 8px", fontWeight: 700, border: `1px solid ${CONC_COLORS[p.conc] || "#888"}`, '--pill-bg': (CONC_COLORS[p.conc] || "#888") + "22", '--pill-c': CONC_COLORS[p.conc] || "#888" }}>{p.conc}</span>
           </div>
         </div>
         <div style={{ marginLeft: 10, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
@@ -5479,28 +5467,32 @@ function SammlungTab({ items, log, notes, onDelete, onUpdate, onExport, onSaveNo
   const PERFUME_CARD_HEIGHT = 100; // Geschätzter Höhe-Wert in Pixeln
 
   function VirtualPerfumeList({ items, notes, onClick, noteFieldLabel, fillLevels, onSetFill, priceMl }) {
+    function PerfumeRow({ index, style, ariaAttributes }) {
+      const p = items[index];
+      if (!p) return null;
+      return (
+        <div style={style} {...ariaAttributes}>
+          <PerfumeCard
+            p={p}
+            notes={notes}
+            onClick={() => onClick(p.id)}
+            noteFieldLabel={noteFieldLabel}
+            fillLevel={fillLevels?.[p.id] ?? null}
+          />
+        </div>
+      );
+    }
+
     return (
       <FixedSizeListVirtual
-        height={items.length * PERFUME_CARD_HEIGHT}
-        itemCount={items.length}
-        itemSize={PERFUME_CARD_HEIGHT}
-        width="100%"
-      >
-        {({ index }) => {
-          const p = items[index];
-          if (!p) return null;
-          return (
-            <PerfumeCard
-              key={p.id}
-              p={p}
-              notes={notes}
-              onClick={() => onClick(p.id)}
-              noteFieldLabel={noteFieldLabel}
-              fillLevel={fillLevels?.[p.id] ?? null}
-            />
-          );
-        }}
-      </FixedSizeListVirtual>
+        defaultHeight={items.length * PERFUME_CARD_HEIGHT}
+        defaultWidth={0}
+        rowCount={items.length}
+        rowHeight={PERFUME_CARD_HEIGHT}
+        rowComponent={PerfumeRow}
+        rowProps={{}}
+        style={{ width: "100%" }}
+      />
     );
   }
   const noteFieldLabel = { top: "↑", middle: "○", base: "↓" };
@@ -5628,14 +5620,14 @@ function SammlungTab({ items, log, notes, onDelete, onUpdate, onExport, onSaveNo
       {/* Results */}
       {items.length === 0 ? (
         <div style={{ padding: 20 }}>
-          <div style={{ ...S.skeleton("60%", 18), marginBottom: 16 }} />
-          <div style={{ ...S.skeleton("40%", 12), marginBottom: 8 }} />
-          <div style={{ ...S.skeleton("80%", 12), marginBottom: 8 }} />
-          <div style={{ ...S.skeleton("70%", 12), marginBottom: 8 }} />
-          <div style={{ ...S.skeleton("50%", 12), marginBottom: 24 }} />
-          <div style={{ ...S.skeleton("100%", 40), borderRadius: 12 }} />
-          <div style={{ ...S.skeleton("100%", 40), borderRadius: 12, marginTop: 8 }} />
-          <div style={{ ...S.skeleton("100%", 40), borderRadius: 12, marginTop: 8 }} />
+          <div className="skeleton" style={{ width: "60%", height: 18, marginBottom: 16 }} />
+          <div className="skeleton" style={{ width: "40%", height: 12, marginBottom: 8 }} />
+          <div className="skeleton" style={{ width: "80%", height: 12, marginBottom: 8 }} />
+          <div className="skeleton" style={{ width: "70%", height: 12, marginBottom: 8 }} />
+          <div className="skeleton" style={{ width: "50%", height: 12, marginBottom: 24 }} />
+          <div className="skeleton" style={{ width: "100%", height: 40, borderRadius: 12 }} />
+          <div className="skeleton" style={{ width: "100%", height: 40, borderRadius: 12, marginTop: 8 }} />
+          <div className="skeleton" style={{ width: "100%", height: 40, borderRadius: 12, marginTop: 8 }} />
         </div>
       ) : (
         <VirtualPerfumeList
@@ -5789,7 +5781,7 @@ function StatistikTab({ items, log, onSelectPerfume }) {
           <div className="lbl">HÄUFIGSTE NOTEN</div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 7, marginBottom: 16 }}>
             {Object.entries(notes).sort((a, b) => b[1] - a[1]).slice(0, 15).map(([n, c]) => (
-              <span key={n} style={{ ...S.pill(fc), fontSize: 11, padding: "4px 10px" }}>{n} ×{c}</span>
+              <span key={n} className="pill" style={{ fontSize: 11, padding: "4px 10px", '--pill-bg': (fc || "#888") + "22", '--pill-c': fc || "#888" }}>{n} ×{c}</span>
             ))}
           </div>
           <div className="lbl">PARFÜMS</div>
@@ -5818,7 +5810,7 @@ function StatistikTab({ items, log, onSelectPerfume }) {
       <div style={{ display: "flex", borderBottom: "1px solid #E8E6E0", marginBottom: 16 }}>
                     {STABS.map(t => (
           <button key={t.id} onClick={() => setStatsTab(t.id)}
-            className="tab" style={{ ...S.dtab(statsTab === t.id), fontSize: 11 }}>{t.label}</button>
+            className={S.dtab(statsTab === t.id).className} style={{ fontSize: 11 }}>{t.label}</button>
         ))}
       </div>
 
@@ -5927,7 +5919,7 @@ function StatistikTab({ items, log, onSelectPerfume }) {
                 const size = i < 5 ? 13 : i < 12 ? 11 : 10;
                 const opacity = Math.max(0.5, 1 - i * 0.025);
                 return (
-                  <span key={n} style={{ ...S.pill("#5F5E5A"), fontSize: size, opacity, padding: "3px 9px" }}>
+                  <span key={n} className="pill" style={{ fontSize: size, opacity, padding: "3px 9px", background: "#5F5E5A22", color: "#5F5E5A" }}>
                     {n} <span style={{ opacity: .7 }}>×{c}</span>
                   </span>
                 );
@@ -5946,7 +5938,7 @@ function StatistikTab({ items, log, onSelectPerfume }) {
                   <div style={{ fontSize: 12, fontWeight: 500, marginBottom: 6, color: "#1A1A18" }}>{cat}</div>
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
                     {top5.map(([n, cnt]) => (
-                      <span key={n} style={{ ...S.pill("#5F5E5A"), fontSize: 10, padding: "2px 8px" }}>{n} ×{cnt}</span>
+                      <span key={n} className="pill" style={{ fontSize: 10, padding: "2px 8px", background: "#5F5E5A22", color: "#5F5E5A" }}>{n} ×{cnt}</span>
                     ))}
                   </div>
                 </div>
@@ -6629,7 +6621,7 @@ function OrdnerTab({ items, onSelectPerfume }) {
                     <span>{l2}</span>
                   </div>
                 </div>
-                <span style={{ ...S.pill(FAM_COLORS[p.family] || "#888"), fontSize: 10 }}>{p.format}</span>
+                <span className="pill" style={{ fontSize: 10, background: (FAM_COLORS[p.family] || "#888") + "22", color: FAM_COLORS[p.family] || "#888" }}>{p.format}</span>
               </div>
             );
           })}
@@ -6736,7 +6728,7 @@ function OrdnerTab({ items, onSelectPerfume }) {
                                 </div>
                               </div>
                               <div style={{ display: "flex", gap: 4, alignItems: "center", flexShrink: 0, marginLeft: 8 }}>
-                                <span style={{ ...S.pill(FAM_COLORS[p.family] || "#888"), fontSize: 9 }}>{p.format}</span>
+                                <span className="pill" style={{ fontSize: 9, background: (FAM_COLORS[p.family] || "#888") + "22", color: FAM_COLORS[p.family] || "#888" }}>{p.format}</span>
                                 {(p.rating || 0) > 0 && <span style={{ fontSize: 10, color: "#BA7517" }}>{"★".repeat(Math.min(5, Math.max(0, Math.round(p.rating || 0))))}</span>}
                               </div>
                             </div>
@@ -7448,8 +7440,8 @@ state.items.filter(p => p.format === "Flakon" && state.fillLevels[p.id] !== unde
           aria-controls={`panel-${t.id}`}
           id={`tab-${t.id}`}
           onClick={() => { dispatch({ type: 'SET_DETAIL', payload: null }); dispatch({ type: 'SET_BACK_STACK', payload: s => [...s, state.tab].slice(-10) }); dispatch({ type: 'SET_TAB', payload: t.id }); }}
-          className="tab"
-          style={{ ...S.tab(state.tab === t.id), whiteSpace: "nowrap", position: "relative" }}>
+          className={S.tab(state.tab === t.id).className}
+          style={{ whiteSpace: "nowrap", position: "relative" }}>
           <span style={{ marginRight: 1, fontSize: 9 }}>{t.i}</span>{t.l}
           {t.badge && <span style={{
             position: "absolute", top: 1, right: 1, fontSize: 6, background: "#E24B4A", color: "#fff",

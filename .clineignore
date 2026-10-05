@@ -1,0 +1,29 @@
+# Abhängigkeiten und Build
+node_modules/
+build/
+dist/
+.cache/
+
+# Geheimnisse (wichtig, besonders mit Supabase-Keys)
+.env
+.env.*
+*.pem
+
+# Große oder irrelevante Dateien
+package-lock.json
+*.log
+*.min.js
+*.map
+coverage/
+
+# Medien
+*.png
+*.jpg
+*.webp
+*.svg
+*.mp4
+*.pdf
+
+# Editor und System
+.DS_Store
+.vscode/

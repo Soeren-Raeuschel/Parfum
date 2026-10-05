@@ -137,14 +137,27 @@
   box-shadow: 0 1px 3px rgba(26,26,24,0.04);
 }
 
+.card-hover {
+  transition: transform .4s cubic-bezier(0.25,.46,.45,.94), box-shadow .4s cubic-bezier(0.25,.46,.45,.94);
+  transform: translateY(0);
+  box-shadow: 0 1px 3px rgba(26,26,24,0.04);
+}
+
+.card-hover:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(26,26,24,0.08);
+}
+
 /* --- Pills (Badges) --- */
 .pill {
   display: inline-block;
   font-size: 10px;
   padding: 2px 8px;
   border-radius: 20px;
-  background: #1A1A18;
-  color: #fff;
+  --pill-bg: #1A1A18;
+  --pill-c: #1A1A18;
+  background: var(--pill-bg, #1A1A18);
+  color: var(--pill-c, #1A1A18);
   letter-spacing: 0.3px;
   transition: all .3s ease;
 }
@@ -637,4 +650,228 @@
 @keyframes toastIn {
   from { transform: translateX(-50%) translateY(100%); opacity: 0; }
   to { transform: translateX(-50%) translateY(0); opacity: 1; }
+}/* --- Buttons (Variationen) --- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 16px;
+  border-radius: 12px;
+  min-height: 44px;
+  border: 1px solid #D3D1C7;
+  background: #F1EFE8;
+  color: #1A1A18;
+  font-family: "Georgia", serif;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  outline: none;
+  transition: all .2s ease;
+}
+
+.btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.btn:active {
+  transform: translateY(0);
+}
+
+.btn-pri {
+  background: #1A1A18;
+  color: #fff;
+  border: none;
+  box-shadow: 0 4px 15px rgba(26,26,24,0.2);
+}
+
+.btn-pri:hover {
+  background: #333333;
+  box-shadow: 0 6px 20px rgba(26,26,24,0.3);
+}
+
+.btn-out {
+  background: transparent;
+  border: 1px solid #D3D1C7;
+  color: #1A1A18;
+}
+
+.btn-out:hover {
+  border-color: #534AB7;
+  background: rgba(83, 74, 183, 0.05);
+}
+
+.btn-sm {
+  padding: 6px 12px;
+  min-height: 36px;
+  font-size: 10px;
+}
+
+.btn-lg {
+  padding: 14px 24px;
+  min-height: 44px;
+  font-size: 13px;
+}
+
+/* --- Chips --- */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px;
+  border-radius: 12px;
+  min-height: 44px;
+  background: transparent;
+  border: 1px solid #D3D1C7;
+  color: #1A1A18;
+  font-family: "Georgia", serif;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  outline: none;
+  transition: all .2s ease;
+}
+
+.chip:hover {
+  border-color: #534AB7;
+  background: rgba(83, 74, 183, 0.05);
+}
+
+.chip.active {
+  background: #534AB7;
+  color: #fff;
+  border-color: #534AB7;
+}
+
+/* --- Skeleton Loader --- */
+.skeleton {
+  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 8px;
+}
+
+/* --- Scrollbar Styles --- */
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+.scrollbar-hide {
+  -ms-overflow-style: none;  /* IE 10+ */
+  scrollbar-width: none;   /* Firefox */
+}
+
+/* --- Buttons (Variationen) --- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 16px;
+  border-radius: 12px;
+  min-height: 44px;
+  border: 1px solid #D3D1C7;
+  background: #F1EFE8;
+  color: #1A1A18;
+  font-family: 'Georgia', serif;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  outline: none;
+  transition: all .2s ease;
+}
+
+.btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.btn:active {
+  transform: translateY(0);
+}
+
+.btn-pri {
+  background: #1A1A18;
+  color: #fff;
+  border: none;
+  box-shadow: 0 4px 15px rgba(26,26,24,0.2);
+}
+
+.btn-pri:hover {
+  background: #333333;
+  box-shadow: 0 6px 20px rgba(26,26,24,0.3);
+}
+
+.btn-out {
+  background: transparent;
+  border: 1px solid #D3D1C7;
+  color: #1A1A18;
+}
+
+.btn-out:hover {
+  border-color: #534AB7;
+  background: rgba(83, 74, 183, 0.05);
+}
+
+.btn-sm {
+  padding: 6px 12px;
+  min-height: 36px;
+  font-size: 10px;
+}
+
+.btn-lg {
+  padding: 14px 24px;
+  min-height: 44px;
+  font-size: 13px;
+}
+
+/* --- Chips --- */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px;
+  border-radius: 12px;
+  min-height: 44px;
+  background: transparent;
+  border: 1px solid #D3D1C7;
+  color: #1A1A18;
+  font-family: 'Georgia', serif;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  outline: none;
+  transition: all .2s ease;
+}
+
+.chip:hover {
+  border-color: #534AB7;
+  background: rgba(83, 74, 183, 0.05);
+}
+
+.chip.active {
+  background: #534AB7;
+  color: #fff;
+  border-color: #534AB7;
+}
+
+/* --- Skeleton Loader --- */
+.skeleton {
+  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 8px;
+}
+
+/* --- Scrollbar Styles --- */
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+.scrollbar-hide {
+  -ms-overflow-style: none;  /* IE 10+ */
+  scrollbar-width: none;   /* Firefox */
 }
