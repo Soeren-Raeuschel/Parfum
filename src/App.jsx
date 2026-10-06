@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef, useReducer, lazy, Suspense } from "react";
+import { Combobox, Dialog, Disclosure, Tab } from "@headlessui/react";
 import { storage } from "./data/storage";
 import { List as FixedSizeListVirtual } from "react-window";
 import { AppError, recordError } from "./utils/errorHandler";
+import { FileUpload } from "./components/ui/file-upload";
 
 
 // ── Debounce helper ─────────────────────────────────────────────────────────────
@@ -2081,6 +2083,7 @@ function DeclutterTab({ items, log, onDelete, onSelectPerfume, onUpdate, declutt
   // Persistent user decisions: { [id]: "Behalten"|"Verkaufen"|"Verschenken"|"Entfernt" }
   const [decisions, setDecisions] = useState(() => declutterStatus || {});
   const [toast, setToast] = useState("");
+  const [pendingDelete, setPendingDelete] = useState(null);
 
   function saveDecision(id, decision) {
     setDecisions(prev => {
@@ -2227,11 +2230,11 @@ function DeclutterTab({ items, log, onDelete, onSelectPerfume, onUpdate, declutt
 
             {/* Remove button */}
             {p._suggestion !== "Ausprobieren" && (
-              <button onClick={() => { if (confirm(`"${p.name}" wirklich entfernen?`)) { onDelete(p.id); saveDecision(p.id, "Entfernt"); } }}
+              <button onClick={() => setPendingDelete(p)}
                 className="btn"
                 style={{ ...S.btn("out"), fontSize: 11, padding: "6px 10px", width: "100%", color: "#E24B4A", borderColor: "#F09595" }}>
                 Aus Sammlung entfernen
-              aria-label="Parfüm aus Sammlung entfernen"
+                <span className="sr-only">: {p.name}</span>
               </button>
             )}
             {p._suggestion === "Ausprobieren" && (
@@ -2245,11 +2248,29 @@ function DeclutterTab({ items, log, onDelete, onSelectPerfume, onUpdate, declutt
       {visible.length > declDisplayCount && (
         <button onClick={() => setDeclDisplayCount(c => c + 15)}
           className="btn btn-out"
-          style={{ width: "100%", fontSize: 12, padding: "12px", marginBottom: 8 }}>
+          style={{ width: "100%", fontSize: 12, padding: "12px", marginBottom: 8 }}
+          aria-label="Mehr Parfüms anzeigen">
           Mehr anzeigen ({visible.length - declDisplayCount} weitere)
-        aria-label="Mehr Parfüms anzeigen"
         </button>
       )}
+      <Dialog open={Boolean(pendingDelete)} onClose={() => setPendingDelete(null)} className="relative z-[9100]">
+        <div className="fixed inset-0 bg-black/45" aria-hidden="true" />
+        <div className="fixed inset-0 flex items-center justify-center p-5">
+          <Dialog.Panel style={{ background: "#fff", borderRadius: 12, padding: 20, maxWidth: 340, width: "100%", boxShadow: "0 8px 32px rgba(0,0,0,.2)" }}>
+            <Dialog.Title style={{ fontSize: 14, fontWeight: 500, color: "#1A1A18", marginBottom: 8 }}>
+              „{pendingDelete?.name}" wirklich entfernen?
+            </Dialog.Title>
+            <Dialog.Description style={{ fontSize: 12, color: "#888780", marginBottom: 16 }}>
+              Dieser Vorgang kann nicht rückgängig gemacht werden.
+            </Dialog.Description>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => { onDelete(pendingDelete.id); saveDecision(pendingDelete.id, "Entfernt"); setPendingDelete(null); }}
+                style={{ ...S.btn("pri"), background: "#E24B4A", flex: 1 }}>Ja, entfernen</button>
+              <button onClick={() => setPendingDelete(null)} style={{ ...S.btn("out"), flex: 1 }}>Abbrechen</button>
+            </div>
+          </Dialog.Panel>
+        </div>
+      </Dialog>
     </div>
   );
 }
@@ -2597,58 +2618,38 @@ function analyzeNoteCompat(p1, p2) {
 }
 
 function LayeringPerfumeSelect({ label, inputId, search, setSearch, filtered, selected, setSelected, items }) {
-  const [open, setOpen] = useState(false);
-  const selectedP = items.find(p => p.id === selected);
-  const families = selectedP
-    ? (selectedP.families && selectedP.families.length > 0 ? selectedP.families : [selectedP.family || "Sonstiges"])
-    : [];
+  const selectedP = items.find(p => p.id === selected) || null;
   return (
     <div style={{ flex: 1, minWidth: 0 }}>
       <div className="lbl">{label}</div>
-      <div style={{ position: "relative" }}>
-        <input id={inputId} value={selectedP ? `${selectedP.name} – ${selectedP.house}` : search}
-          onChange={e => { setSearch(e.target.value); setOpen(true); if (selected) setSelected(""); }}
-          onFocus={() => setOpen(true)}
-          onBlur={() => setTimeout(() => setOpen(false), 150)}
-          placeholder="Parfüm suchen…"
-          className="inp" style={{ ...S.inp, fontSize: 12 }} />
-        {selectedP && (
-          <button onClick={() => { setSelected(""); setSearch(""); }}
-            aria-label="Auswahl zurücksetzen"
-            style={{
-              position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)",
-              background: "none", border: "none", cursor: "pointer", fontSize: 13, color: "#B4B2A9"
-            }}>✕</button>
-        )}
-        {open && !selectedP && (
-          <div style={{
-            position: "absolute", top: "100%", left: 0, right: 0, zIndex: 200,
-            background: "#fff", border: "1px solid #E8E6E0", borderRadius: 8,
-            maxHeight: 180, overflowY: "auto", boxShadow: "0 4px 16px rgba(0,0,0,.1)"
-          }}>
-            {filtered.slice(0, 20).map(p => {
-              const pFams = (p.families && p.families.length > 0) ? p.families : [p.family || "Sonstiges"];
-              return (
-                <div key={p.id}
-                  onMouseDown={e => { e.preventDefault(); setSelected(p.id); setSearch(""); setOpen(false); }}
-                  style={{ padding: "8px 12px", fontSize: 12, cursor: "pointer", borderBottom: "1px solid #F1EFE8" }}
-                  onMouseEnter={e => e.currentTarget.style.setProperty('background', '#F1EFE8')}
-                  onMouseLeave={e => e.currentTarget.style.setProperty('background', 'transparent')}>
-                  <div>{p.name}</div>
-                  <div style={{ fontSize: 10, color: "#888780" }}>
-                    {p.house} · {pFams.map((f, idx) => (
-                      <span key={f} style={idx === 0 ? { fontWeight: 500 } : { fontWeight: 400, opacity: 0.7 }}>
-                        {f}{idx < pFams.length - 1 ? ", " : ""}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
-            {filtered.length === 0 && <div style={{ padding: 12, fontSize: 12, color: "#888780" }}>Kein Treffer</div>}
+      <Combobox value={selectedP} onChange={p => { setSelected(p?.id || ""); setSearch(""); }} nullable>
+        {({ open }) => (
+          <div style={{ position: "relative" }}>
+            <Combobox.Input id={inputId} displayValue={p => p ? `${p.name} – ${p.house}` : search}
+              onChange={e => { setSearch(e.target.value); if (selected) setSelected(""); }}
+              placeholder="Parfüm suchen…"
+              className="inp" style={{ ...S.inp, fontSize: 12 }} />
+            {selectedP && (
+              <Combobox.Button aria-label="Auswahl zurücksetzen" onClick={() => { setSelected(""); setSearch(""); }}
+                style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", fontSize: 13, color: "#B4B2A9" }}>✕</Combobox.Button>
+            )}
+            {open && (
+              <Combobox.Options static style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 200, background: "#fff", border: "1px solid #E8E6E0", borderRadius: 8, maxHeight: 180, overflowY: "auto", boxShadow: "0 4px 16px rgba(0,0,0,.1)" }}>
+                {filtered.slice(0, 20).map(p => {
+                  const pFams = (p.families && p.families.length > 0) ? p.families : [p.family || "Sonstiges"];
+                  return (
+                    <Combobox.Option key={p.id} value={p} style={({ active }) => ({ padding: "8px 12px", fontSize: 12, cursor: "pointer", borderBottom: "1px solid #F1EFE8", background: active ? "#F1EFE8" : "transparent" })}>
+                      <div>{p.name}</div>
+                      <div style={{ fontSize: 10, color: "#888780" }}>{p.house} · {pFams.map((f, idx) => <span key={f} style={idx === 0 ? { fontWeight: 500 } : { fontWeight: 400, opacity: 0.7 }}>{f}{idx < pFams.length - 1 ? ", " : ""}</span>)}</div>
+                    </Combobox.Option>
+                  );
+                })}
+                {filtered.length === 0 && <div style={{ padding: 12, fontSize: 12, color: "#888780" }}>Kein Treffer</div>}
+              </Combobox.Options>
+            )}
           </div>
         )}
-      </div>
+      </Combobox>
     </div>
   );
 }
@@ -2857,7 +2858,6 @@ function SmartMatchMode({ items }) {
   // Primär: Parfum aus Sammlung wählen (wie LayeringPerfumeSelect)
   const [selId, setSelId]             = useState("");
   const [search, setSearch]           = useState("");
-  const [dropOpen, setDropOpen]       = useState(false);
   // Fallback: manuelle Familie + Noten (nur wenn kein Sammlung-Parfum gewählt)
   const [manualFamText, setManualFamText]   = useState("");
   const [manualNoteText, setManualNoteText] = useState("");
@@ -2922,49 +2922,36 @@ function SmartMatchMode({ items }) {
 
         {/* Parfum-Picker (aus der Sammlung) */}
         <div className="lbl">PARFUM WÄHLEN</div>
-        <div style={{ position: "relative", marginBottom: 10 }}>
-          <input
-            value={selectedP ? `${selectedP.name} – ${selectedP.house}` : search}
-            onChange={e => { setSearch(e.target.value); setDropOpen(true); if (selId) setSelId(""); setResults(null); }}
-            onFocus={() => setDropOpen(true)}
-            onBlur={() => setTimeout(() => setDropOpen(false), 150)}
-            placeholder="Parfum aus Sammlung suchen…"
-            className="inp" style={{ ...S.inp, fontSize: 12 }} />
-          {selectedP && (
-            <button onClick={() => { setSelId(""); setSearch(""); setResults(null); }}
-              aria-label="Auswahl zurücksetzen"
-              style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)",
-                background: "none", border: "none", cursor: "pointer", fontSize: 13, color: "#B4B2A9" }}>✕</button>
-          )}
-          {dropOpen && !selectedP && (
-            <div style={{
-              position: "absolute", top: "100%", left: 0, right: 0, zIndex: 200,
-              background: "#fff", border: "1px solid #E8E6E0", borderRadius: 8,
-              maxHeight: 200, overflowY: "auto", boxShadow: "0 4px 16px rgba(0,0,0,.1)"
-            }}>
-              {filtered.slice(0, 25).map(p => {
-                const pFams = (p.families && p.families.length > 0) ? p.families : [p.family || "Sonstiges"];
-                return (
-                  <div key={p.id}
-                    onMouseDown={e => { e.preventDefault(); setSelId(p.id); setSearch(""); setDropOpen(false); setResults(null); }}
-                    style={{ padding: "8px 12px", fontSize: 12, cursor: "pointer", borderBottom: "1px solid #F1EFE8" }}
-                    onMouseEnter={e => e.currentTarget.style.setProperty('background', '#F1EFE8')}
-                    onMouseLeave={e => e.currentTarget.style.setProperty('background', 'transparent')}>
-                    <div>{p.name}</div>
-                    <div style={{ fontSize: 10, color: "#888780" }}>
-                      {p.house} · {pFams.map((f, i) => (
-                        <span key={f} style={i === 0 ? { fontWeight: 500 } : { opacity: 0.7 }}>
-                          {f}{i < pFams.length - 1 ? ", " : ""}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
-              {filtered.length === 0 && <div style={{ padding: 12, fontSize: 12, color: "#888780" }}>Kein Treffer</div>}
+        <Combobox value={selectedP || null} onChange={p => { setSelId(p?.id || ""); setSearch(""); setResults(null); }} nullable>
+          {({ open }) => (
+            <div style={{ position: "relative", marginBottom: 10 }}>
+              <Combobox.Input
+                displayValue={p => p ? `${p.name} – ${p.house}` : search}
+                onChange={e => { setSearch(e.target.value); if (selId) setSelId(""); setResults(null); }}
+                placeholder="Parfum aus Sammlung suchen…"
+                className="inp" style={{ ...S.inp, fontSize: 12 }} />
+              {selectedP && (
+                <Combobox.Button onClick={() => { setSelId(""); setSearch(""); setResults(null); }}
+                  aria-label="Auswahl zurücksetzen"
+                  style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", fontSize: 13, color: "#B4B2A9" }}>✕</Combobox.Button>
+              )}
+              {open && (
+                <Combobox.Options static style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 200, background: "#fff", border: "1px solid #E8E6E0", borderRadius: 8, maxHeight: 200, overflowY: "auto", boxShadow: "0 4px 16px rgba(0,0,0,.1)" }}>
+                  {filtered.slice(0, 25).map(p => {
+                    const pFams = (p.families && p.families.length > 0) ? p.families : [p.family || "Sonstiges"];
+                    return (
+                      <Combobox.Option key={p.id} value={p} style={({ active }) => ({ padding: "8px 12px", fontSize: 12, cursor: "pointer", borderBottom: "1px solid #F1EFE8", background: active ? "#F1EFE8" : "transparent" })}>
+                        <div>{p.name}</div>
+                        <div style={{ fontSize: 10, color: "#888780" }}>{p.house} · {pFams.map((f, i) => <span key={f} style={i === 0 ? { fontWeight: 500 } : { opacity: 0.7 }}>{f}{i < pFams.length - 1 ? ", " : ""}</span>)}</div>
+                      </Combobox.Option>
+                    );
+                  })}
+                  {filtered.length === 0 && <div style={{ padding: 12, fontSize: 12, color: "#888780" }}>Kein Treffer</div>}
+                </Combobox.Options>
+              )}
             </div>
           )}
-        </div>
+        </Combobox>
 
         {/* Gewählte Familie anzeigen */}
         {selectedP && (
@@ -3002,7 +2989,7 @@ function SmartMatchMode({ items }) {
         <button onClick={runSmartMatch} disabled={!canSearch}
           style={{
             width: "100%", padding: "11px 0", borderRadius: 8, border: "none",
-            background: canSearch ? "#534AB7" : "#E8E6E0",
+            background: canSearch ? "#1A1A18" : "#E8E6E0",
             color: canSearch ? "#fff" : "#B4B2A9",
             fontSize: 13, fontWeight: 500, cursor: canSearch ? "pointer" : "default",
             transition: "background .2s", marginTop: 2
@@ -3164,7 +3151,7 @@ function LayeringTab({ items }) {
           <button key={m.id} onClick={() => setMode(m.id)} aria-label={`Modus: ${m.label}`}
             style={{
               flex: 1, padding: "8px 0", borderRadius: 8, border: "none",
-              background: mode === m.id ? "#534AB7" : "#F1EFE8",
+              background: mode === m.id ? "#1A1A18" : "#F1EFE8",
               color: mode === m.id ? "#fff" : "#888780",
               fontSize: 12, fontWeight: mode === m.id ? 600 : 400,
               cursor: "pointer", transition: "background .2s, color .2s"
@@ -3649,7 +3636,7 @@ const recCtx = useMemo(() => {
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8 }}>
               {MOODS.map(m => (
                 <button key={m.id} onClick={() => setMood(m.id)} aria-label={`Stimmung: ${m.label}`} className={`chip ${mood === m.id ? "active" : ""}`}
-                  style={{ padding: "10px 6px", textAlign: "center", borderRadius: 10 }}>
+                  style={{ ...S.chip(mood === m.id), padding: "10px 6px", textAlign: "center", borderRadius: 10 }}>
                   <div style={{ fontSize: 16, marginBottom: 2 }}>{m.icon}</div>
                   <div style={{ fontSize: 10 }}>{m.label}</div>
                 </button>
@@ -3732,7 +3719,7 @@ const recCtx = useMemo(() => {
                 {[["Feminin","♀"],["Maskulin","♂"],["Unisex","⚥"]].map(([id,icon]) => (
                   <button key={id} onClick={() => setGenderPref(genderPref === id ? null : id)}
                     className="chip"
-                    style={{ display: "flex", gap: 6, borderRadius: 8, padding: "6px 10px", fontSize: 11, alignItems: "center" }}>
+                    style={{ ...S.chip(genderPref === id), display: "flex", gap: 6, borderRadius: 8, padding: "6px 10px", fontSize: 11, alignItems: "center" }}>
                     <span style={{ fontSize: 12 }}>{icon}</span><span>{id}</span>
                   </button>
                 ))}
@@ -3744,8 +3731,8 @@ const recCtx = useMemo(() => {
 
       {/* ── KI-Tagesbeschreibung ─────────────────────────────────── */}
       <div className="card" style={{marginBottom: 12, padding: "14px 16px", borderRadius: 14,
-        background: showAiInput ? "#F4F3FD" : "#fff",
-        border: showAiInput ? "1.5px solid #534AB7" : "1px solid #E8E6E0",
+        background: "#fff",
+        border: showAiInput ? "1.5px solid #1A1A18" : "1px solid #E8E6E0",
         transition: "all .2s" }}>
         {!showAiInput ? (
           <button onClick={() => setShowAiInput(true)}
@@ -3753,7 +3740,7 @@ const recCtx = useMemo(() => {
               background: "none", border: "none", cursor: "pointer", padding: 0,
               fontFamily: "'Georgia',serif", textAlign: "left" }}>
             <div style={{ width: 32, height: 32, borderRadius: "50%",
-              background: "linear-gradient(135deg, #534AB7, #1D9E75)",
+              background: "#1A1A18",
               display: "flex", alignItems: "center", justifyContent: "center",
               flexShrink: 0, fontSize: 14 }}>✦</div>
             <div>
@@ -3765,7 +3752,7 @@ const recCtx = useMemo(() => {
         ) : (
           <div>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-              <div style={{ fontSize: 10, letterSpacing: "1.5px", color: "#534AB7" }}>BESCHREIB DEINEN TAG</div>
+              <div style={{ fontSize: 10, letterSpacing: "1.5px", color: "#1A1A18" }}>BESCHREIB DEINEN TAG</div>
               <button onClick={() => { setShowAiInput(false); setAiText(""); setAiErr(""); }}
                 style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14, color: "#B4B2A9", padding: 0 }}>✕</button>
             </div>
@@ -3775,7 +3762,7 @@ const recCtx = useMemo(() => {
               {["Romantisches Dinner", "Gym & Sport", "Büro-Meeting", "Strandurlaub", "Gemütlicher Abend"].map(ex => (
                 <button key={ex} onClick={() => setAiText(ex)}
                   style={{ fontSize: 10, padding: "5px 10px", borderRadius: 20,
-                    border: "1px solid #D3D1C7", background: aiText === ex ? "#534AB7" : "#fff",
+                    border: "1px solid #D3D1C7", background: aiText === ex ? "#1A1A18" : "#fff",
                     color: aiText === ex ? "#fff" : "#888780", cursor: "pointer", transition: "all .1s" }}>
                   {ex}
                 </button>
@@ -3790,7 +3777,7 @@ const recCtx = useMemo(() => {
                 placeholder='z.B. "Abendessen mit Freunden" oder "langer Arbeitstag"'
                 autoFocus
                 className="inp" style={{ ...S.inp, flex: 1, fontSize: 13, borderRadius: 10,
-                  border: "1.5px solid #534AB7", background: "#fff" }}
+                  border: "1.5px solid #1A1A18", background: "#fff" }}
                 maxLength={500}
               />
               <div style={{ fontSize: 10, color: aiText.length > 450 ? "#E24B4A" : "#B4B2A9", marginBottom: 10, minWidth: "36px", textAlign: "right" }}>
@@ -3799,8 +3786,8 @@ const recCtx = useMemo(() => {
               <button onClick={handleAiGenerate} disabled={aiLoading || !aiText.trim()}
                 style={{ ...S.btn("pri"), padding: "12px 16px", borderRadius: 10, fontSize: 12,
                   opacity: aiLoading || !aiText.trim() ? 0.5 : 1,
-                  background: "linear-gradient(135deg, #534AB7, #7B6FCF)",
-                  boxShadow: "0 2px 8px rgba(83,74,183,0.3)", whiteSpace: "nowrap" }}>
+                  background: "#1A1A18",
+                  boxShadow: "0 2px 8px rgba(26,26,24,0.25)", whiteSpace: "nowrap" }}>
                 {aiLoading ? "…" : "✦ Los"}
               </button>
             </div>
@@ -4852,7 +4839,7 @@ function ReloadDiffModal({ reloadDiff, onApply, onClose }) {
                 </span>
                 <div style={{
                   width: 18, height: 18, borderRadius: "50%", border: `1.5px solid ${selected.has(d.field) ? "#534AB7" : "#D3D1C7"}`,
-                  background: selected.has(d.field) ? "#534AB7" : "transparent",
+                  background: selected.has(d.field) ? "#1A1A18" : "transparent",
                   display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0
                 }}>
                   {selected.has(d.field) && <span style={{ fontSize: 10, color: "#fff" }}>✓</span>}
@@ -5250,31 +5237,25 @@ function DetailView({ perfume, items, log, notes, onClose, onDelete, onUpdate, o
         />
       )}
 
-      {showConfirmDelete && (
-        <div role="alertdialog" aria-modal="true" aria-labelledby="confirm-del-title"
-          style={{
-            position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 9100,
-            display: "flex", alignItems: "center", justifyContent: "center", padding: 20
-          }}>
-          <div style={{
-            background: "#fff", borderRadius: 12, padding: 20, maxWidth: 340, width: "100%",
-            boxShadow: "0 8px 32px rgba(0,0,0,.2)"
-          }}>
-            <div id="confirm-del-title" style={{ fontSize: 14, fontWeight: 500, color: "#1A1A18", marginBottom: 8 }}>
+      <Dialog open={showConfirmDelete} onClose={() => setShowConfirmDelete(false)} className="relative z-[9100]">
+        <div className="fixed inset-0 bg-black/45" aria-hidden="true" />
+        <div className="fixed inset-0 flex items-center justify-center p-5">
+          <Dialog.Panel style={{ background: "#fff", borderRadius: 12, padding: 20, maxWidth: 340, width: "100%", boxShadow: "0 8px 32px rgba(0,0,0,.2)" }}>
+            <Dialog.Title style={{ fontSize: 14, fontWeight: 500, color: "#1A1A18", marginBottom: 8 }}>
               „{local.name}" wirklich löschen?
-            </div>
-            <div style={{ fontSize: 12, color: "#888780", marginBottom: 16 }}>
+            </Dialog.Title>
+            <Dialog.Description style={{ fontSize: 12, color: "#888780", marginBottom: 16 }}>
               Dieser Vorgang kann nicht rückgängig gemacht werden.
-            </div>
+            </Dialog.Description>
             <div style={{ display: "flex", gap: 8 }}>
               <button onClick={() => { onDelete(local.id); onClose(); }}
                 style={{ ...S.btn("pri"), background: "#E24B4A", flex: 1 }}>Ja, löschen</button>
               <button onClick={() => setShowConfirmDelete(false)}
                 style={{ ...S.btn("out"), flex: 1 }}>Abbrechen</button>
             </div>
-          </div>
+          </Dialog.Panel>
         </div>
-      )}
+      </Dialog>
     </div>
   );
 }
@@ -6759,29 +6740,30 @@ function OrdnerTab({ items, onSelectPerfume }) {
 }
 
 function SettingsSection({ title, icon, children, defaultOpen = false }) {
-  const [open, setOpen] = useState(defaultOpen);
   return (
-    <div className="card" style={{marginBottom: 10, overflow: "hidden" }}>
-      <button onClick={() => setOpen(o => !o)} style={{
-        display: "flex", justifyContent: "space-between", alignItems: "center",
-        width: "100%", background: "none", border: "none", cursor: "pointer",
-        padding: 0, fontFamily: "'Georgia',serif", textAlign: "left"
-      }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <span style={{ fontSize: 16 }}>{icon}</span>
-          <span style={{ fontSize: 13, fontWeight: 500, color: "#1A1A18" }}>{title}</span>
-        </div>
-        <span style={{
-          fontSize: 12, color: "#B4B2A9", transition: "transform .2s",
-          transform: open ? "rotate(180deg)" : "none", display: "inline-block"
-        }}>▾</span>
-      </button>
-      {open && (
-        <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid #F1EFE8", animation: "fadeIn .15s ease-out both" }}>
-          {children}
-        </div>
+    <Disclosure as="div" className="card" style={{ marginBottom: 10, overflow: "hidden" }} defaultOpen={defaultOpen}>
+      {({ open }) => (
+        <>
+          <Disclosure.Button style={{
+            display: "flex", justifyContent: "space-between", alignItems: "center",
+            width: "100%", background: "none", border: "none", cursor: "pointer",
+            padding: 0, fontFamily: "'Georgia',serif", textAlign: "left"
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: 16 }}>{icon}</span>
+              <span style={{ fontSize: 13, fontWeight: 500, color: "#1A1A18" }}>{title}</span>
+            </div>
+            <span style={{
+              fontSize: 12, color: "#B4B2A9", transition: "transform .2s",
+              transform: open ? "rotate(180deg)" : "none", display: "inline-block"
+            }} aria-hidden="true">▾</span>
+          </Disclosure.Button>
+          <Disclosure.Panel style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid #F1EFE8", animation: "fadeIn .15s ease-out both" }}>
+            {children}
+          </Disclosure.Panel>
+        </>
       )}
-    </div>
+    </Disclosure>
   );
 }
 
@@ -6839,7 +6821,6 @@ function GroqRateLimitStatus() {
 }
 
 function EinstellungenTab({ items, onImport, onExport, onAdd, onClearAll, onClearAllData, appName, onSetAppName, userNotePrefs, setUserNotePrefs, userFamilyPrefs, setUserFamilyPrefs }) {
-  const [drag, setDrag] = useState(false);
   // msg can be { text, type: "ok"|"err" } — renders green or red accordingly
   const [msg, setMsg] = useState(null);
   const [confirmMode, setConfirmMode] = useState(null); // null | "items" | "all"
@@ -7088,27 +7069,7 @@ function EinstellungenTab({ items, onImport, onExport, onAdd, onClearAll, onClea
         {/* TSV Import */}
         <div style={{ marginBottom: 16 }}>
           <div style={{ fontSize: 11, color: "#B4B2A9", marginBottom: 8 }}>TSV IMPORTIEREN</div>
-          <div
-            onDragOver={e => { e.preventDefault(); setDrag(true); }}
-            onDragLeave={e => { e.preventDefault(); setDrag(false); }}
-            onDrop={e => { e.preventDefault(); setDrag(false); handleFile(e.dataTransfer.files[0]); }}
-            style={{
-              border: `2px dashed ${drag ? "#534AB7" : "#D3D1C7"}`,
-              borderRadius: 10, padding: "20px", textAlign: "center", marginBottom: 8,
-              background: drag ? "#EEEDFE" : "transparent",
-              transition: "all .15s",
-              transform: drag ? "scale(1.01)" : "scale(1)",
-            }}>
-            <div style={{ fontSize: 24, marginBottom: 4, transition: "transform .15s", transform: drag ? "scale(1.2)" : "scale(1)" }}>◎</div>
-            <div style={{ fontSize: 12, marginBottom: 2 }}>{drag ? "Loslassen zum Importieren" : "TSV hier ablegen"}</div>
-            <div style={{ fontSize: 11, color: "#888780" }}>{drag ? "" : "oder per Knopf auswählen"}</div>
-          </div>
-          <label style={{ display: "block" }}>
-            <input type="file" accept=".tsv,.txt,.csv" onChange={e => handleFile(e.target.files[0])} style={{ display: "none" }} />
-            <span className="btn" style={{ ...S.btn("out"), display: "block", textAlign: "center", padding: "10px", cursor: "pointer" }}>
-              Datei auswählen
-            </span>
-          </label>
+          <FileUpload onChange={files => handleFile(files[0])} />
           {msg && (
             <div style={{ fontSize: 12, marginTop: 8, textAlign: "center", color: msg.type === "err" ? "#993C1D" : "#1D9E75" }}>
               {msg.text}
@@ -7127,19 +7088,27 @@ function EinstellungenTab({ items, onImport, onExport, onAdd, onClearAll, onClea
 
       {/* ── Gefahrenzone ────────────────────────────────────── */}
       <SettingsSection title="Gefahrenzone" icon="⚠">
-        {confirmMode ? (
-          <div>
-            {confirmMode === "items" ? (
-              <div style={{ fontSize: 13, color: "#A32D2D", marginBottom: 12 }}>
-                Alle {items.length} Parfüms wirklich löschen?<br />
-                <span style={{ fontSize: 11, color: "#888780" }}>Log, Notizen und Einstellungen bleiben erhalten.</span>
-              </div>
-            ) : (
-              <div style={{ fontSize: 13, color: "#A32D2D", marginBottom: 12 }}>
-                Wirklich <strong>alle Daten</strong> löschen?<br />
-                <span style={{ fontSize: 11, color: "#888780" }}>Sammlung, Log, Notizen, Füllstände – alles wird unwiderruflich gelöscht.</span>
-              </div>
-            )}
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <button onClick={() => setConfirmMode("items")}
+            className="btn" style={{ ...S.btn("out"), width: "100%", color: "#A32D2D", borderColor: "#F09595" }}>
+            Sammlung leeren
+          </button>
+          <button onClick={() => setConfirmMode("all")}
+            className="btn" style={{ ...S.btn("out"), width: "100%", color: "#A32D2D", borderColor: "#F09595", fontSize: 12 }}>
+            Alle Daten zurücksetzen
+          </button>
+        </div>
+      </SettingsSection>
+      <Dialog open={Boolean(confirmMode)} onClose={() => setConfirmMode(null)} className="relative z-[9100]">
+        <div className="fixed inset-0 bg-black/45" aria-hidden="true" />
+        <div className="fixed inset-0 flex items-center justify-center p-5">
+          <Dialog.Panel style={{ background: "#fff", borderRadius: 12, padding: 20, maxWidth: 360, width: "100%", boxShadow: "0 8px 32px rgba(0,0,0,.2)" }}>
+            <Dialog.Title style={{ fontSize: 14, fontWeight: 500, color: "#A32D2D", marginBottom: 8 }}>
+              {confirmMode === "items" ? `Alle ${items.length} Parfüms wirklich löschen?` : "Wirklich alle Daten löschen?"}
+            </Dialog.Title>
+            <Dialog.Description style={{ fontSize: 11, color: "#888780", marginBottom: 16 }}>
+              {confirmMode === "items" ? "Log, Notizen und Einstellungen bleiben erhalten." : "Sammlung, Log, Notizen, Füllstände – alles wird unwiderruflich gelöscht."}
+            </Dialog.Description>
             <div style={{ display: "flex", gap: 8 }}>
               <button onClick={() => {
                 if (confirmMode === "items") onClearAll();
@@ -7152,20 +7121,9 @@ function EinstellungenTab({ items, onImport, onExport, onAdd, onClearAll, onClea
                 Abbrechen
               </button>
             </div>
-          </div>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <button onClick={() => setConfirmMode("items")}
-              className="btn" style={{ ...S.btn("out"), width: "100%", color: "#A32D2D", borderColor: "#F09595" }}>
-              Sammlung leeren
-            </button>
-            <button onClick={() => setConfirmMode("all")}
-              className="btn" style={{ ...S.btn("out"), width: "100%", color: "#A32D2D", borderColor: "#F09595", fontSize: 12 }}>
-              Alle Daten zurücksetzen
-            </button>
-          </div>
-        )}
-      </SettingsSection>
+          </Dialog.Panel>
+        </div>
+      </Dialog>
 
       <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}`}</style>
     </div>
@@ -7424,6 +7382,7 @@ state.items.filter(p => p.format === "Flakon" && state.fillLevels[p.id] !== unde
   )}
 
   <header className="hdr">
+    <div>
     <h1 style={{
       fontSize: 20, fontWeight: 400, letterSpacing: "-0.5px", color: "#1A1A18",
       margin: "0 0 14px", display: "flex", alignItems: "baseline", gap: 8
@@ -7433,23 +7392,29 @@ state.items.filter(p => p.format === "Flakon" && state.fillLevels[p.id] !== unde
         {state.items.length > 0 ? `${state.items.length} parfüms` : ""}
       </span>
     </h1>
-    <nav className="tabs" role="tablist" aria-label="Hauptnavigation">
-      {TABS.map(t => (
-        <button key={t.id} role="tab"
-          aria-selected={state.tab === t.id}
-          aria-controls={`panel-${t.id}`}
-          id={`tab-${t.id}`}
-          onClick={() => { dispatch({ type: 'SET_DETAIL', payload: null }); dispatch({ type: 'SET_BACK_STACK', payload: s => [...s, state.tab].slice(-10) }); dispatch({ type: 'SET_TAB', payload: t.id }); }}
-          className={S.tab(state.tab === t.id).className}
-          style={{ whiteSpace: "nowrap", position: "relative" }}>
-          <span style={{ marginRight: 1, fontSize: 9 }}>{t.i}</span>{t.l}
-          {t.badge && <span style={{
-            position: "absolute", top: 1, right: 1, fontSize: 6, background: "#E24B4A", color: "#fff",
-            borderRadius: 5, minWidth: 10, height: 10, lineHeight: "10px", textAlign: "center", padding: "0 2px"
-          }}>{t.badge}</span>}
-        </button>
-      ))}
-    </nav>
+    <Tab.Group
+      selectedIndex={Math.max(0, TABS.findIndex(t => t.id === state.tab))}
+      onChange={index => {
+        const t = TABS[index];
+        if (!t) return;
+        dispatch({ type: 'SET_DETAIL', payload: null });
+        dispatch({ type: 'SET_BACK_STACK', payload: s => [...s, state.tab].slice(-10) });
+        dispatch({ type: 'SET_TAB', payload: t.id });
+      }}
+    >
+      <Tab.List as="nav" className="tabs" aria-label="Hauptnavigation">
+        {TABS.map(t => (
+          <Tab key={t.id} id={`tab-${t.id}`} aria-controls={`panel-${t.id}`} className={({ selected }) => `${S.tab(selected).className} ui-focus-visible:outline-none`} style={{ whiteSpace: "nowrap", position: "relative" }}>
+            <span style={{ marginRight: 1, fontSize: 9 }}>{t.i}</span>{t.l}
+            {t.badge && <span style={{
+              position: "absolute", top: 1, right: 1, fontSize: 6, background: "#E24B4A", color: "#fff",
+              borderRadius: 5, minWidth: 10, height: 10, lineHeight: "10px", textAlign: "center", padding: "0 2px"
+            }}>{t.badge}</span>}
+          </Tab>
+        ))}
+      </Tab.List>
+    </Tab.Group>
+    </div>
   </header>
   <PullToRefresh tabKey={state.tab}>
     <main key={state.tab} className="body" style={{ animation: "fadeInUp .18s ease-out both" }} role="tabpanel" id={`panel-${state.tab}`} aria-labelledby={`tab-${state.tab}`}>

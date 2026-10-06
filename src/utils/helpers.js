@@ -25,7 +25,7 @@ export function splitNotes(val) {
  * @returns {string} Bereinigter String
  */
 export function sanitizeField(v) {
-  return (v == null ? "" : String(v)).replace(/[\t\r\n]/g, " ").trim();
+  return (v === null || v === undefined ? "" : String(v)).replace(/[\t\r\n]/g, " ").trim();
 }
 
 /**

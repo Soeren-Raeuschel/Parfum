@@ -6,6 +6,8 @@ dist/
 .env.local
 *.local
 coverage/
+test-results/
+playwright-report/
 
 
 # --- VS Code & IDEs ---

@@ -23,3 +23,13 @@ Du musst dich bei der Generierung und Bearbeitung von Code in diesem Projekt str
 
 ## 5. Testumgebung & REST Client
 - Halte die Datei `test-requests.http` aktuell. Alle API-Endpunkte und Fallback-Szenarien müssen dort als ausführbare HTTP-Requests dokumentiert sein.
+
+
+## Pflicht-Verifikation
+Nach JEDER abgeschlossenen Umsetzung:
+1. Führe `npm run verify` aus.
+2. Bei Fehlern: Ausgabe lesen, Ursache finden, beheben, erneut `npm run verify` ausführen. Maximal 5 Versuche, danach stoppen und mir den Stand und die vermutete Ursache berichten.
+3. Melde eine Aufgabe erst als erledigt, wenn `npm run verify` grün ist.
+4. Bestehende Tests nur ändern, wenn sich das Verhalten bewusst geändert hat. Tests nie löschen oder abschwächen, nur damit sie durchlaufen.
+5. Für jede neue Funktion mindestens einen neuen Test schreiben (Vitest für Logik/Komponenten, Playwright nur für wichtige Abläufe).
+6. Starte keine Dauerprozesse im Vordergrund, die das Terminal blockieren (kein `vitest` im Watch-Modus, kein HTML-Report).

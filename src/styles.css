@@ -60,7 +60,14 @@
   letter-spacing: 0.3px;
   white-space: nowrap;
   outline: none;
-  transition: color .2s ease;
+  transition: color .2s ease, filter .2s ease, text-shadow .2s ease;
+}
+
+.tab:hover,
+.tab:focus-visible {
+  color: #1A1A18;
+  text-shadow: 0 0 9px rgba(26, 26, 24, 0.28);
+  filter: drop-shadow(0 0 5px rgba(26, 26, 24, 0.18));
 }
 
 .tab .tab-icon {
