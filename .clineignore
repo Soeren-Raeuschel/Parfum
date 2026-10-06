@@ -1,29 +1,71 @@
-# Abhängigkeiten und Build
+# --- Abhängigkeiten & Build ---
 node_modules/
-build/
 dist/
+build/
+out/
 .cache/
+.vite/
 
-# Geheimnisse (wichtig, besonders mit Supabase-Keys)
+# --- Geheimnisse & Umgebungsvariablen ---
+# (wichtig, besonders mit Supabase-Keys)
 .env
 .env.*
+!.env.example
+!.env.local.example
 *.pem
+*.key
+*.env.json
 
-# Große oder irrelevante Dateien
-package-lock.json
+# --- Test- & Coverage-Artefakte ---
+coverage/
+test-results/
+playwright-report/
+.nyc_output/
+
+# --- Logfiles & temporäre Dateien ---
 *.log
+*.swp
+*.swo
+*~
+
+# --- Große / generierte Dateien ---
 *.min.js
 *.map
-coverage/
+package-lock.json
 
-# Medien
+# --- Binärdateien & Medien (nur für Cline ausblenden) ---
+# Hinweis: kleine Icons/Assets in public/ bleiben im Repo, werden von Cline aber
+# nicht angezeigt. Bei Bedarf einzelne Dateien mit !..dateiname.png freigeben.
 *.png
 *.jpg
+*.jpeg
 *.webp
+*.gif
 *.svg
 *.mp4
+*.mov
 *.pdf
+*.woff
+*.woff2
 
-# Editor und System
-.DS_Store
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# --- KI- & Deployment-Konfiguration ---
+.netlify/
+
+# --- Editor & System ---
 .vscode/
+.idea/
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini

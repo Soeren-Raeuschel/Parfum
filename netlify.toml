@@ -1,0 +1,7 @@
+# Build-Einstellungen (Dashboard-Konfiguration hat Vorrang, dient als Fallback)
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[functions]
+directory = "netlify/functions"

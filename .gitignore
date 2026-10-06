@@ -1,17 +1,37 @@
+# --- Abhängigkeiten ---
 node_modules/
+
+# --- Build-Ausgabe ---
 dist/
+build/
+out/
+
+# --- Geheimnisse & Umgebungsvariablen ---
 .env
 .env.*
 !.env.example
-.env.local
-*.local
+*.pem
+*.key
+*.env.json
+
+# --- Test- & Coverage-Artefakte ---
 coverage/
 test-results/
 playwright-report/
+.nyc_output/
 
+# --- Logs & temporäre Dateien ---
+*.log
+*.swp
+*.swo
+*~
+
+# --- Netlify ---
+.netlify/
 
 # --- VS Code & IDEs ---
 .vscode/
+.idea/
 
 # --- Betriebssysteme ---
 .DS_Store
@@ -23,18 +43,12 @@ ehthumbs.db
 Thumbs.db
 Desktop.ini
 
-# --- Temporäre Editordateien ---
-*.swp
-*.swo
-*~
-
 # --- KI & LLM Konfigurationen ---
-# Ignoriert deine lokalen Cursor-Regeln, falls sie nicht im Team geteilt werden sollen
+# Lokale, nicht geteilte KI-Regeln
 .cursorrules
 
-# --- HTTP-Clients & API-Tests ---
-# Ignoriert die HTTP-Testdatei (oder sensible Umgebungsvariablen wie http-client.env.json)
-test-request.http
-*.env.json
-# Local Netlify folder
-.netlify
+# --- Python ---
+__pycache__/
+*.py[cod]
+.venv/
+

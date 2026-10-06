@@ -2,8 +2,9 @@ import React, { useState, useEffect, useMemo, useCallback, useRef, useReducer, l
 import { Combobox, Dialog, Disclosure, Tab } from "@headlessui/react";
 import { storage } from "./data/storage";
 import { List as FixedSizeListVirtual } from "react-window";
-import { AppError, recordError } from "./utils/errorHandler";
+import { AppError, recordError, InvalidResponseError } from "./utils/errorHandler";
 import { FileUpload } from "./components/ui/file-upload";
+import { AiSparkle } from "./components/AiSparkle";
 
 
 // ── Debounce helper ─────────────────────────────────────────────────────────────
@@ -86,7 +87,7 @@ function cachedFetch(key, fetchFn) {
   const now = Date.now();
   const memory = apiCache.get(key);
   if (memory && now - memory.timestamp <= CACHE_TTL) {
-    log('INFO', 'Using cached API data for key', key);
+    console.log('INFO', 'Using cached API data for key', key);
     return Promise.resolve(memory.data);
   }
   const storage = _getCacheStorage();
@@ -94,7 +95,7 @@ function cachedFetch(key, fetchFn) {
   if (stored && now - stored.timestamp <= CACHE_TTL) {
     // Cache aus localStorage in den Memory-Cache laden
     apiCache.set(key, stored);
-    log('INFO', 'Using cached API data from storage for key', key);
+    console.log('INFO', 'Using cached API data from storage for key', key);
     return Promise.resolve(stored.data);
   }
   return fetchFn().then(result => {
@@ -109,7 +110,7 @@ function clearApiCache() {
   const storage = _getCacheStorage();
   storage.clear();
   persistCache();
-  log('INFO', 'API cache cleared');
+  console.log('INFO', 'API cache cleared');
 }
 
 // ── Storage keys ───────────────────────────────────────────────────────────────
@@ -1016,6 +1017,16 @@ function validateParfumoLookupUrl(raw) {
   if (host !== "parfumo.de" && !host.endsWith(".parfumo.de")) throw new Error("Nur parfumo.de-Links werden unterstützt");
   return u.href;
 }
+
+// Parfumo-URL https://www.parfumo.de/Parfums/Brand/Name -> { brand, name }
+// Die Pfad-Segmente sind URL-kodiert (Leerzeichen als _, Sonderzeichen percent-codiert)
+function extrahiereBrandName(url) {
+  const u = new URL(url);
+  const parts = u.pathname.split("/").filter(Boolean);
+  const brand = parts[1] ? decodeURIComponent(parts[1].replace(/_/g, " ")) : "";
+  const name = parts[2] ? decodeURIComponent(parts[2].replace(/_/g, " ")) : "";
+  return { brand, name };
+}
 function getGroqKey() {
   try {
     const stored = typeof localStorage !== "undefined" && localStorage.getItem(KEYS.groqKey);
@@ -1178,7 +1189,7 @@ function _gtmSelectModel() {
 
 async function groqFetch({ messages, temperature = 0.4, max_tokens = 200, cacheKey = null, forceFallback = false }) {
   const apiKey = getGroqKey();
-  if (!apiKey) { log('ERROR', 'Groq API key missing'); throw new ApiError('Kein Groq API-Key – bitte unter Settings → API eintragen.'); }
+  if (!apiKey) { console.log('ERROR', 'Groq API key missing'); throw new ApiError('Kein Groq API-Key – bitte unter Settings → API eintragen.'); }
 
   const now = Date.now();
   const retryWaitSec = Math.ceil((_groqRetryAfterUntil - now) / 1000);
@@ -1204,7 +1215,7 @@ async function groqFetch({ messages, temperature = 0.4, max_tokens = 200, cacheK
         const waitMs = isNaN(retryAfter) ? GTM_COOLDOWN_MS : Math.min(retryAfter * 1000, 300000);
         s.blockedUntil = Date.now() + waitMs;
         lastErr = new RateLimitError(`Rate-Limit für ${modelDef.id}, wechsle zum nächsten Modell`, { retryAfter: Math.ceil(waitMs / 1000) });
-        log('WARN', `Rate limit hit on ${modelDef.id}`, { retryAfter: Math.ceil(waitMs/1000) });
+        console.log('WARN', `Rate limit hit on ${modelDef.id}`, { retryAfter: Math.ceil(waitMs/1000) });
         continue;
       }
 
@@ -1218,7 +1229,7 @@ async function groqFetch({ messages, temperature = 0.4, max_tokens = 200, cacheK
         } else {
           lastErr = new ApiError(`Unerwartete Antwort (${res.status})`);
         }
-        log('WARN', `HTTP ${res.status} on ${modelDef.id}`, { error: errMsg });
+        console.log('WARN', `HTTP ${res.status} on ${modelDef.id}`, { error: errMsg });
         continue;
       }
 
@@ -1231,7 +1242,7 @@ async function groqFetch({ messages, temperature = 0.4, max_tokens = 200, cacheK
       return { text, fromCache: false, model: modelDef.id };
     } catch (e) {
       lastErr = e instanceof AppError ? e : handleApiError(e, { context: 'groqFetch' });
-      log('WARN', `Fetch error on ${modelDef.id}`, { error: e.message });
+      console.log('WARN', `Fetch error on ${modelDef.id}`, { error: e.message });
     }
   }
 
@@ -1334,6 +1345,13 @@ async function fetchPageTextForLookup(safeUrl) {
   throw new Error("Seiteninhalt konnte nicht geladen werden. Bitte Parfumo-URL prüfen oder später erneut versuchen.");
 }
 
+class NotFoundError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "NotFoundError";
+  }
+}
+
 function normalizeLookupPayload(obj) {
   if (!obj || typeof obj !== "object") throw new Error("Ungültige API-Antwort");
   const pick = (k, max) => {
@@ -1374,6 +1392,49 @@ function normalizeLookupPayload(obj) {
     top, middle, base,
     season, gender,
   };
+}
+
+// ── Normalisierung: bringt beide Datenquellen in das interne App-Format ────────
+function normalisiere(obj) {
+  if (!obj || typeof obj !== "object") throw new Error("Ungültige API-Antwort");
+
+  // ── Neue Netlify-Function (cheerio-Parser) ──
+  if (obj.url && obj.brand && (obj.notes || obj.accords || obj.seasons)) {
+    const notes = obj.notes || {};
+    const joinNames = (list) => (list || []).map(n => n.name).filter(Boolean).join(", ");
+
+    // Seasons: erste Saison mit Wert > 0, sonst Ganzjährig
+    let season = "Ganzjährig";
+    const seasonKey = Object.keys(obj.seasons || {}).find(k => obj.seasons[k] > 0);
+    if (seasonKey) season = seasonKey;
+
+    // Accords nach Gewicht sortiert als Namen-Liste
+    const accords = (obj.accords || []);
+
+    return {
+      name: obj.name || "",
+      house: obj.brand || "",
+      conc: "",
+      family: accords[0]?.name || "",
+      families: accords.map(a => a.name).filter(Boolean).slice(0, 3),
+      top: joinNames(notes.top),
+      middle: joinNames(notes.heart),
+      base: joinNames(notes.base),
+      season, gender: "",
+      url: obj.url || "",
+      // Zusätzliche Felder aus der Function
+      year: obj.year ?? "",
+      maker: obj.maker || "",
+      target: obj.target || "",
+      scent_character: obj.scent_character || "",
+      longevity_sillage: obj.longevity_sillage || "",
+      accords,
+      seasons: obj.seasons || {},
+    };
+  }
+
+  // ── Alter Scraper (Groq-Antwort) – bestehende Normalisierung ──
+  return normalizeLookupPayload(obj);
 }
 function parseTSV(text) {
   if (typeof text !== "string" || text.length > MAX_TSV_CHARS) return [];
@@ -1458,6 +1519,49 @@ Nur JSON:
   const parsed = extractJSON(raw);
   if (!parsed) throw new InvalidResponseError("KI-Antwort enthielt kein lesbares JSON. Bitte nochmal versuchen.");
   return normalizeLookupPayload(parsed);
+}
+
+// ── Neuer Abruf über Netlify Function + Fallback auf den alten KI-Scraper ─────
+class ParfumNotFoundError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "ParfumNotFoundError";
+  }
+}
+
+/**
+ * Ruft Duftdaten über die Netlify Function /api/parfum/:brand/:name ab
+ * und fällt auf den alten jina+Groq-Scraper (lookupByUrl) zurück, wenn die
+ * Function mit einem anderen Fehler als 404 fehlschlägt.
+ * Liefert das normalisierte App-Format ({name, house, conc, family, families,
+ * top, middle, base, season, gender, url, year, maker, target,
+ * scent_character, longevity_sillage, accords, seasons}).
+ */
+async function ladeParfumdaten(brand, name) {
+  try {
+    const res = await fetch(
+      "/api/parfum/" + encodeURIComponent(brand) + "/" + encodeURIComponent(name)
+    );
+    if (res.status === 404) {
+      throw new ParfumNotFoundError("Duft nicht gefunden");
+    }
+    if (!res.ok) {
+      throw new Error(`Netlify Function antwortete mit ${res.status}`);
+    }
+    const data = await res.json();
+    // Datenstruktur der Funktion bereits im App-Format (via normalisiere)
+    return normalisiere(data);
+  } catch (err) {
+    if (err instanceof ParfumNotFoundError) {
+      throw err; // kein Fallback - der Duft existiert so nicht
+    }
+    console.warn("Netlify Function fehlgeschlagen, nutze alten Scraper:", err);
+    // Alter Scraper erwartet eine Parfumo-URL -> Rekonstruktion aus Marke/Name
+    // Slugs wie die Netlify Function bilden: Leerzeichen -> "_" (Parfumo-Konvention)
+    const slugify = (t) => encodeURIComponent(String(t).trim().replace(/\s+/g, "_"));
+    const reconstructed = `https://www.parfumo.de/Parfums/${slugify(brand)}/${slugify(name)}`;
+    return await lookupByUrl(reconstructed);
+  }
 }
 
 // ── Styles (zentralisiert in styles.css, S-Objekt gibt nur Klassen zurück) ─────
@@ -1697,7 +1801,7 @@ const WMO_TO_WEATHER = {
     };
   } catch (error) {
     // Graceful Degradation: Bei Netzwerkfehler Fallback zurückgeben, statt die App abstürzen zu lassen
-    log('WARN', 'Wetter-Abruf fehlgeschlagen – verwende Fallback-Daten.', { error: error.message });
+    console.log('WARN', 'Wetter-Abruf fehlgeschlagen – verwende Fallback-Daten.', { error: error.message });
     return {
       temp: null,
       humidity: null,
@@ -3397,7 +3501,7 @@ function HeuteTab({ items, log, onLog, pushError, prefs, priceMl, onSelectPerfum
     const cacheKey = `interpret_${text}_${season}_${weather}_${occasion}_${mood}_${timeOfDay}_${intensityPref}_${longevityPref}_${priceRange || 'null'}_${genderPref || 'null'}`;
     const cachedInterpretation = interpretationCache.current.get(cacheKey);
     if (cachedInterpretation && Date.now() - cachedInterpretation.timestamp < CACHE_TTL) {
-      log('INFO', 'Using cached interpretation result');
+      console.log('INFO', 'Using cached interpretation result');
       return cachedInterpretation.data;
     }
 
@@ -3739,10 +3843,7 @@ const recCtx = useMemo(() => {
             style={{ display: "flex", alignItems: "center", gap: 10, width: "100%",
               background: "none", border: "none", cursor: "pointer", padding: 0,
               fontFamily: "'Georgia',serif", textAlign: "left" }}>
-            <div style={{ width: 32, height: 32, borderRadius: "50%",
-              background: "#1A1A18",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              flexShrink: 0, fontSize: 14 }}>✦</div>
+            <AiSparkle size={32} />
             <div>
               <div style={{ fontSize: 12, color: "#1A1A18", fontWeight: 500 }}>Beschreib deinen Tag</div>
               <div style={{ fontSize: 11, color: "#888780" }}>KI wählt passende Regler aus</div>
@@ -6109,8 +6210,9 @@ function WunschlisteTab({ wishlist, onSave, items, onAddToCollection, onSelectPe
     setLoading(true); setErr("");
     try {
       const raw = linkUrl.trim();
-      const r = await lookupByUrl(raw);
       const safeUrl = validateParfumoLookupUrl(raw);
+      const { brand, name } = extrahiereBrandName(safeUrl);
+      const r = await ladeParfumdaten(brand, name);
       setForm(f => ({ ...f, name: r.name, house: r.house, url: safeUrl }));
       setLinkUrl("");
       setShowForm(true);
@@ -6877,8 +6979,9 @@ function EinstellungenTab({ items, onImport, onExport, onAdd, onClearAll, onClea
     const alreadyExists = items.some(p => p.url && p.url === url);
     setLoading(true); setLinkErr(""); setPreview(null); setStatus("Suche Parfumo-Seite…");
     try {
-      const result = await lookupByUrl(url);
       const safeUrl = validateParfumoLookupUrl(url);
+      const { brand, name } = extrahiereBrandName(safeUrl);
+      const result = await ladeParfumdaten(brand, name);
       setPreview({ ...result, url: safeUrl, format, rating: 0, id: newId() });
       setStatus(alreadyExists ? "⚠ Diese URL ist bereits in deiner Sammlung." : "");
     } catch (e) {
@@ -7055,6 +7158,31 @@ function EinstellungenTab({ items, onImport, onExport, onAdd, onClearAll, onClea
                   placeholder="Herznoten" className="ta" style={{ ...S.ta, minHeight: 48, fontSize: 12 }} />
                 <textarea value={preview.base || ""} onChange={e => setPreview(p => ({ ...p, base: e.target.value }))}
                   placeholder="Basisnoten" className="ta" style={{ ...S.ta, minHeight: 48, fontSize: 12 }} />
+                {/* Neue Felder aus der Netlify Function (optional, zur Information) */}
+                <input value={preview.year || ""} onChange={e => setPreview(p => ({ ...p, year: e.target.value }))}
+                  placeholder="Jahr (Veröffentlichung)" className="inp" style={{ ...S.inp, fontSize: 12 }} />
+                <input value={preview.maker || ""} onChange={e => setPreview(p => ({ ...p, maker: e.target.value }))}
+                  placeholder="Hersteller" className="inp" style={{ ...S.inp, fontSize: 12 }} />
+                <input value={preview.target || ""} onChange={e => setPreview(p => ({ ...p, target: e.target.value }))}
+                  placeholder="Zielgruppe (Damen/Herren/Damen und Herren)" className="inp" style={{ ...S.inp, fontSize: 12 }} />
+                <textarea value={preview.scent_character || ""} onChange={e => setPreview(p => ({ ...p, scent_character: e.target.value }))}
+                  placeholder="Duftcharakter" className="ta" style={{ ...S.ta, minHeight: 40, fontSize: 12 }} />
+                <textarea value={preview.longevity_sillage || ""} onChange={e => setPreview(p => ({ ...p, longevity_sillage: e.target.value }))}
+                  placeholder="Haltbarkeit und Sillage" className="ta" style={{ ...S.ta, minHeight: 40, fontSize: 12 }} />
+                <textarea value={preview.accords && preview.accords.map(a => a.name).join(", ") || ""}
+                  onChange={e => setPreview(p => ({ ...p, accords: e.target.value.split(",").map(s => ({ name: s.trim() })).filter(Boolean) }))}
+                  placeholder="Accorde (durch Komma getrennt)" className="ta" style={{ ...S.ta, minHeight: 40, fontSize: 12 }} />
+                <textarea value={Object.entries(preview.seasons || {})
+                  .map(([k, v]) => `${k} (${v}%)`).join(", ") || ""}
+                  onChange={e => setPreview(p => {
+                    const map = {};
+                    e.target.value.split(",").forEach(part => {
+                      const m = part.match(/(.+?)\((\d+)%\)/);
+                      if (m) map[m[1].trim()] = parseInt(m[2], 10);
+                    });
+                    return { ...p, seasons: map };
+                  })}
+                  placeholder="Jahreszeiten (durch Komma getrennt, z.B. Sommer (40%), Herbst (30%))" className="ta" style={{ ...S.ta, minHeight: 40, fontSize: 12 }} />
               </div>
               <div style={{ display: "flex", gap: 8 }}>
                 <button onClick={confirmAdd} style={{ ...S.btn("pri"), flex: 1, padding: "10px" }}>
