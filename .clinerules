@@ -25,13 +25,6 @@ Einstiegspunkte: index.html (Projektwurzel) und src/main.jsx bzw. src/main.js.
 - Konfiguration in vite.config.js nur nach Rückfrage ändern.
 - Dev-Server nicht selbst neu starten oder mehrfach starten, wenn er schon läuft.
 
-# Supabase (sobald angebunden)
-- Zugriff nur über einen zentralen Client (z. B. src/lib/supabase.js).
-- URL und anon-Key aus import.meta.env.VITE_..., nie hartcodieren.
-- Im Frontend nur den anon-Key verwenden, niemals den service_role-Key
-  (alles mit VITE_ Präfix landet im Browser und ist öffentlich sichtbar).
-- Row Level Security nicht abschalten.
-
 # React und Tailwind
 - Funktionale Komponenten mit Hooks, keine Klassenkomponenten.
 - Styling ausschließlich mit Tailwind-Klassen, kein neues CSS ohne Rückfrage.
@@ -58,3 +51,7 @@ Einstiegspunkte: index.html (Projektwurzel) und src/main.jsx bzw. src/main.js.
 
 # Abschluss
 Nach jeder Änderung kurz auflisten, welche Dateien geändert wurden und was getestet wurde.
+
+# Modus-Anweisungen für die KI:
+Wenn wir uns im PLAN MODE befinden: Verhalte dich wie ein präziser Software-Architekt. Denke tief über die Struktur nach und nutze deine maximale Denkkapazität (Reasoning).
+Wenn wir uns im ACT MODE befinden: Schreibe den Code absolut deterministisch, halte dich strikt an die Syntax der Tools und erfinde keine kreativen Formatierungen. Konzentriere dich nur auf die fehlerfreie Ausführung der Datei- und Terminalbefehle.
