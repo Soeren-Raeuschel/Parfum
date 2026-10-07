@@ -4,7 +4,7 @@ import { Combobox, Dialog, Disclosure, Tab } from "@headlessui/react";
 import { storage } from "./data/storage";
 import { newId, sanitizePerfume, ONBOARD_STYLES } from "./data/localAdapter"; // Fix: newId/sanitizePerfume/ONBOARD_STYLES wurden verwendet, aber nicht importiert (lokale Definitionen waren auskommentiert)
 import { List as FixedSizeListVirtual } from "react-window";
-import { AppError, recordError, InvalidResponseError } from "./utils/errorHandler";
+import { AppError, recordError, InvalidResponseError, ApiError, NetworkError, RateLimitError } from "./utils/errorHandler"; // Fix: ApiError/NetworkError/RateLimitError wurden in groqFetch verwendet, aber nicht importiert → "Can't find variable: ApiError"
 import { FileUpload } from "./components/ui/file-upload";
 import { AiSparkle } from "./components/AiSparkle";
 import { splitNotes } from "./utils/helpers";
@@ -3553,9 +3553,25 @@ function HeuteTab({ items, log, onLog, pushError, prefs, priceMl, onSelectPerfum
 
   function applyWeather() {
     if (!weatherData) return;
+    const wxLabel = (WEATHERS.find(w => w.id === weatherData.effectiveWeather) || {}).label || weatherData.effectiveWeather;
+    const temp = typeof weatherData.temp === "number" ? Math.round(weatherData.temp) : null;
+    // Fix: "Anwenden" übernimmt das ermittelte Wetter UND setzt die Tageszeit
+    // auf die aktuelle Uhrzeit (gleiche Ableitung wie beim App-Start), damit
+    // beide Regler dem "Jetzt"-Zustand entsprechen. Danach Empfehlung neu
+    // berechnen und Feedback per Toast geben.
     setWeather(weatherData.effectiveWeather);
+    const h = new Date().getHours();
+    const currentTimeOfDay = h < 10 ? "morning" : h < 14 ? "afternoon" : h < 20 ? "evening" : "night";
+    setTime(currentTimeOfDay);
+    const timeLabels = { morning: "Morgens", afternoon: "Mittags", evening: "Abends", night: "Nachts" };
     const humid = humidityIntensityMod(weatherData.humidity);
     if (humid) setIntensity(humid);
+    // Fix: Werte explizit als Override übergeben (State-Updates sind async,
+    // generate() würde sonst die alten Chip-Werte lesen)
+    generate([], { weather: weatherData.effectiveWeather, timeOfDay: currentTimeOfDay });
+    showToast(temp !== null
+      ? `✓ Wetter übernommen: ${wxLabel}, ${temp}°C · ${timeLabels[currentTimeOfDay]} – Empfehlung aktualisiert`
+      : `✓ Wetter übernommen: ${wxLabel} · ${timeLabels[currentTimeOfDay]} – Empfehlung aktualisiert`);
   }
   const [open, setOpen] = useState({ crit: true, res: true, alts: true, wild: true, debug: false });
   const [loadingRecs, setLoadingRecs] = useState(false);
@@ -3703,6 +3719,7 @@ const recCtx = useMemo(() => {
     const effTime = overrides.timeOfDay ?? timeOfDay;
     const effIntensity = overrides.intensityPref ?? intensityPref;
     const effLongevity = overrides.longevityPref ?? longevityPref;
+    const effWeather = overrides.weather ?? weather;
     generateTimerRef.current = setTimeout(() => {
       generateTimerRef.current = null;
       // Fix: try/finally – loadingRecs wird in jedem Fall zurückgesetzt
@@ -3712,7 +3729,7 @@ const recCtx = useMemo(() => {
         // Kontext-Schlüssel für die Lernschleife (Anlass + Stimmung)
         const ctxKey = feedbackContextKey(effOccasion, effMood);
         const selection = buildPickerSelection({
-          season, weather, occasion: effOccasion, mood: effMood, timeOfDay: effTime,
+          season, weather: effWeather, occasion: effOccasion, mood: effMood, timeOfDay: effTime,
           intensityPref: effIntensity, longevityPref: effLongevity, temperature,
           recentPrimaryFamilies: recentPrimaryFamilies(wearMap),
           personalBonusMap: getPersonalBonusMap(ctxKey),
@@ -4267,6 +4284,19 @@ const recCtx = useMemo(() => {
             → Zu Einstellungen
           </button>
         </div>
+      )}
+
+      {/* Fix: Toast-Anzeige für HeuteTab – showToast() setzte den State, aber der
+          Toast wurde nie gerendert (das {toast && …} gehört zur DeclutterTab,
+          die ein eigenes State hat). Dadurch waren Feedbacks (z. B. "Anwenden",
+          KI-Fehler, "Kein passender Duft") im Heute-Tab unsichtbar. */}
+      {toast && (
+        <div style={{
+          position: "fixed", bottom: 100, left: "50%", transform: "translateX(-50%)",
+          background: "#1A1A18", color: "#fff", padding: "10px 20px", borderRadius: 20,
+          fontSize: 12, zIndex: 9999, animation: "fadeIn .2s ease-out", whiteSpace: "nowrap",
+          boxShadow: "0 4px 20px rgba(26,26,24,.25)"
+        }}>{toast}</div>
       )}
     </div>
   );
