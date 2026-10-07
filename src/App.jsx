@@ -1501,6 +1501,54 @@ function downloadTSV(items) {
   const uri = "data:text/tab-separated-values;charset=utf-8," + encodeURIComponent([h.join("\t"), ...rows].join("\n"));
   const a = document.createElement("a"); a.href = uri; a.download = "parfum_sammlung.tsv"; a.click();
 }
+// ── Sicherer Datenexport (JSON/CSV, iOS-Standalone-kompatibel via Web Share API) ──
+const EXPORT_SCHEMA_VERSION = 1;
+// Entfernt Funktionen/undefined aus dem Export; JSON.stringify bricht bei zirkulären
+// Referenzen ab – das wird im Aufrufer per try/catch abgefangen.
+function exportReplacer(key, value) {
+  if (typeof value === "function" || value === undefined) return undefined;
+  return value;
+}
+function buildExportPayload(items, wishlist) {
+  return {
+    meta: {
+      app: "Sillage Parfum-Sammlung",
+      exportedAt: new Date().toISOString(),
+      schemaVersion: EXPORT_SCHEMA_VERSION,
+      counts: { items: items.length, wishlist: (wishlist || []).length },
+    },
+    items: items.map(p => exportReplacer("", p) || {}),
+    wishlist: (wishlist || []).map(w => exportReplacer("", w) || {}),
+  };
+}
+function buildExportCsv(items) {
+  const h = ["Name", "Haus", "Konzentration", "Familie", "Kopfnoten", "Herznoten",
+    "Basisnoten", "Saison", "Geschlecht", "Format", "Bewertung", "Parfumo Link"];
+  const esc = v => '"' + String(v ?? "").replace(/"/g, '""') + '"';
+  const rows = items.map(p => [p.name, p.house, p.conc, p.family, p.top, p.middle,
+    p.base, p.season, p.gender, p.format, p.rating ?? 0, p.url].map(esc).join(","));
+  return "\uFEFF" + [h.map(esc).join(","), ...rows].join("\r\n");
+}
+// Primär Web Share API (funktioniert im iOS-Standalone-Modus, zeigt das Share-Sheet),
+// Fallback: Blob + temporärer <a download>-Link.
+function shareOrDownloadFile(content, filename, mime, onDone, onError) {
+  let file;
+  try { file = new File([content], filename, { type: mime }); } catch { file = null; }
+  if (file && typeof navigator !== "undefined" && navigator.canShare && navigator.canShare({ files: [file] })) {
+    navigator.share({ files: [file], title: filename })
+      .then(() => onDone())
+      .catch(err => { if (err && err.name !== "AbortError") onError(); });
+    return;
+  }
+  try {
+    const blob = new Blob([content], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = filename; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    onDone();
+  } catch { onError(); }
+}
 async function lookupByUrl(url) {
   const safeUrl = validateParfumoLookupUrl(url);
   const pageText = await fetchPageTextForLookup(safeUrl);
@@ -5778,7 +5826,7 @@ const PerfumeCard = React.memo(function PerfumeCard({ p, notes, onClick, noteFie
   );
 });
 
-function SammlungTab({ items, log, notes, onDelete, onUpdate, onExport, onSaveNote, onLog, fillLevels, onSetFill, priceMl, onSavePriceMl }) {
+function SammlungTab({ items, log, notes, onDelete, onUpdate, onExport, onSaveNote, onLog, fillLevels, onSetFill, priceMl, onSavePriceMl, wishlist }) {
   const [rawSearch, setRawSearch] = useState("");
   const { debounced: debouncedRawSearch, signal: searchSignal, abort: abortSearch } = useDebounce(rawSearch, 300);
   const [activeTerms, setActiveTerms] = useState([]); // committed search terms
@@ -5790,8 +5838,38 @@ function SammlungTab({ items, log, notes, onDelete, onUpdate, onExport, onSaveNo
   const [showNotesPicker, setShowNotesPicker] = useState(false);
   const [displayCount, setDisplayCount] = useState(15);
   const [filteredItems, setFilteredItems] = useState([]);
+  const [exportToast, setExportToast] = useState("");
   const inputRef = useRef(null);
   const sammlungDetailRef = useRef(null);
+
+  function showExportToast(msg) {
+    setExportToast(msg);
+    setTimeout(() => setExportToast(""), 2200);
+  }
+
+  // Sicherer lokaler Datenexport: JSON-Vollbackup (später wieder importierbar)
+  // oder CSV für Excel/Numbers. Läuft komplett im Browser, keine Netzwerk-Calls.
+  function handleDataExport(fmtKind) {
+    if (!items.length) { showExportToast("Keine Daten zum Exportieren"); return; }
+    const date = new Date().toISOString().slice(0, 10);
+    if (fmtKind === "csv") {
+      shareOrDownloadFile(buildExportCsv(items), `parfum-sammlung-${date}.csv`,
+        "text/csv;charset=utf-8",
+        () => showExportToast("✓ CSV exportiert"),
+        () => showExportToast("Export fehlgeschlagen"));
+      return;
+    }
+    let content;
+    try {
+      content = JSON.stringify(buildExportPayload(items, wishlist), exportReplacer, 2);
+    } catch {
+      showExportToast("Export fehlgeschlagen (Daten nicht serialisierbar)");
+      return;
+    }
+    shareOrDownloadFile(content, `parfum-sammlung-${date}.json`, "application/json",
+      () => showExportToast("✓ Backup exportiert"),
+      () => showExportToast("Export fehlgeschlagen"));
+  }
 
   
 
@@ -5928,6 +6006,20 @@ function SammlungTab({ items, log, notes, onDelete, onUpdate, onExport, onSaveNo
 
   return (
     <div>
+      {/* Dezent platzierte Export-Buttons (JSON-Backup / CSV) */}
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 6, marginBottom: 8 }}>
+        <button onClick={() => handleDataExport("json")} aria-label="Sammlung als JSON-Backup exportieren"
+          title="Daten als JSON-Backup exportieren (lokal, inkl. Wunschliste)"
+          className="btn" style={{ ...S.btn("sm"), background: "transparent", border: "0.5px solid #D3D1C7", fontSize: 11, color: "#888780" }}>
+          ⇩ JSON
+        </button>
+        <button onClick={() => handleDataExport("csv")} aria-label="Sammlung als CSV exportieren"
+          title="Daten als CSV für Excel/Numbers exportieren"
+          className="btn" style={{ ...S.btn("sm"), background: "transparent", border: "0.5px solid #D3D1C7", fontSize: 11, color: "#888780" }}>
+          ⇩ CSV
+        </button>
+      </div>
+
       {/* Search input */}
       <div style={{ position: "relative", marginBottom: 8 }}>
         <input id="sammlung-search" ref={inputRef} value={rawSearch}
@@ -6071,12 +6163,22 @@ function SammlungTab({ items, log, notes, onDelete, onUpdate, onExport, onSaveNo
               : "Keine Parfüms gefunden"}
           </div>
           {liveTerms.length > 0 && (
-            <button onClick={() => { setLiveTerms([]); setFamilyFilter("Alle"); setSeasonFilter("Alle"); setFormatFilter("Alle"); }}
+            <button onClick={() => { setActiveTerms([]); setRawSearch(""); setFam("Alle"); setSeas("Alle"); setFmt("Alle"); }}
               style={{ ...S.btn("out"), fontSize: 12, padding: "8px 16px" }}>
               Filter zurücksetzen
             </button>
           )}
         </div>
+      )}
+
+      {/* Export-Toast */}
+      {exportToast && (
+        <div style={{
+          position: "fixed", bottom: 100, left: "50%", transform: "translateX(-50%)",
+          background: "#1A1A18", color: "#fff", padding: "10px 20px", borderRadius: 20,
+          fontSize: 12, zIndex: 9999, animation: "fadeIn .2s ease-out", whiteSpace: "nowrap",
+          boxShadow: "0 4px 20px rgba(26,26,24,.25)"
+        }}>{exportToast}</div>
       )}
     </div>
   );
@@ -6459,7 +6561,7 @@ function WishDetailPortal({ selectedWish, wishDetails, loadingDetails, items, pr
                 {wishDetails.conc && <div style={{ background: "#FAFAF8", borderRadius: 8, padding: 10, textAlign: "center" }}><div style={{ fontSize: 9, color: "#B4B2A9", marginBottom: 2 }}>KONZ.</div><div style={{ fontSize: 11, color: "#1A1A18" }}>{wishDetails.conc}</div></div>}
                 {wishDetails.gender && <div style={{ background: "#FAFAF8", borderRadius: 8, padding: 10, textAlign: "center" }}><div style={{ fontSize: 9, color: "#B4B2A9", marginBottom: 2 }}>GENDER</div><div style={{ fontSize: 11, color: "#1A1A18" }}>{wishDetails.gender}</div></div>}
               </div>
-              {sedelectedWish.note && <div style={{ background: "#FAFAF8", borderRadius: 12, padding: 14, marginBottom: 16 }}><p style={{ fontSize: 12, fontStyle: "italic", color: "#888780", margin: 0, fontFamily: "'Georgia',serif", lineHeight: 1.5 }}>"{selectedWish.note}"</p></div>}
+              {selectedWish.note && <div style={{ background: "#FAFAF8", borderRadius: 12, padding: 14, marginBottom: 16 }}><p style={{ fontSize: 12, fontStyle: "italic", color: "#888780", margin: 0, fontFamily: "'Georgia',serif", lineHeight: 1.5 }}>„{selectedWish.note}"</p></div>}
               <div style={{ display: "flex", gap: 10 }}>
                 {!alreadyOwned && <button onClick={() => { moveToCollection({ ...selectedWish, ...wishDetails }); setSelectedWish(null); setWishDetails(null); }} className="btn" style={{ flex: 1, ...S.btn("pri"), padding: "14px", borderRadius: 10, fontSize: 13 }}>→ Zur Sammlung</button>}
                 {selectedWish.url && <a href={selectedWish.url} target="_blank" rel="noopener noreferrer" style={{ flex: 1, ...S.btn("out"), padding: "14px", borderRadius: 10, fontSize: 13, textAlign: "center", textDecoration: "none", color: "#1A1A18" }}>Parfumo ↗</a>}
@@ -6485,6 +6587,81 @@ function WishDetailPortal({ selectedWish, wishDetails, loadingDetails, items, pr
     </div>
   );
   return ReactDOM.createPortal(content, document.body);
+}
+
+// ── WishCard: hochwertige Karte im Stil der Sammlungs-Karten ───────────────────
+function WishCard({ wish, prioColors, prioLabels, alreadyOwned, daysAgo, onOpen, onMove, onRemove }) {
+  return (
+    <div onClick={() => onOpen(wish)}
+      role="button" tabIndex={0}
+      onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen(wish); } }}
+      className="card" style={{ padding: "16px 18px", marginBottom: 10,
+        borderRadius: 16, boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
+        borderLeft: `4px solid ${prioColors[wish.prio] || "#D3D1C7"}`,
+        cursor: "pointer", transition: "box-shadow .2s, transform .2s", outline: "none"
+      }}
+      onMouseEnter={function (e) { e.currentTarget.style.setProperty('box-shadow', '0 4px 16px rgba(0,0,0,0.08)') }}
+      onMouseLeave={function (e) { e.currentTarget.style.setProperty('box-shadow', '0 2px 8px rgba(0,0,0,0.04)') }}
+      onFocus={function (e) { e.currentTarget.style.setProperty('box-shadow', '0 4px 16px rgba(0,0,0,0.08)') }}
+      onBlur={function (e) { e.currentTarget.style.setProperty('box-shadow', '0 2px 8px rgba(0,0,0,0.04)') }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 16, fontWeight: 500, fontFamily: "'Georgia',serif", color: "#1A1A18", marginBottom: 4 }}>{wish.name}</div>
+          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+            {wish.house && <span style={{ fontSize: 12, color: "#888780" }}>{wish.house}</span>}
+            {daysAgo !== null && <span style={{ fontSize: 10, color: "#B4B2A9" }}>vor {daysAgo}d</span>}
+            {alreadyOwned && <span style={{ fontSize: 10, color: "#1D9E75" }}>✓ In Sammlung</span>}
+          </div>
+        </div>
+        <span style={{
+          fontSize: 10, letterSpacing: "1px", padding: "4px 10px", borderRadius: 20, flexShrink: 0,
+          background: (prioColors[wish.prio] || "#D3D1C7") + "15", color: prioColors[wish.prio] || "#888780", fontWeight: 500
+        }}>
+          {prioLabels[wish.prio]}
+        </span>
+      </div>
+
+      {wish.note && <div style={{ fontSize: 12, color: "#888780", marginTop: 8, fontStyle: "italic", lineHeight: 1.5, fontFamily: "'Georgia',serif" }}>„{wish.note}"</div>}
+
+      <div style={{ display: "flex", gap: 8, marginTop: 14, alignItems: "center" }}>
+        {!alreadyOwned && (
+          <button onClick={(e) => { e.stopPropagation(); onMove(wish); }} aria-label={`„${wish.name}" in die Sammlung verschieben`}
+            className="btn" style={{ ...S.btn("out"), flex: 1, fontSize: 12, padding: "12px 14px", borderRadius: 10, color: "#534AB7", borderColor: "#E8E6E0", background: "#fff" }}>
+            → Sammlung
+          </button>
+        )}
+        {wish.url && (
+          <a href={wish.url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}
+            className="btn" style={{ ...S.btn("out"), flex: 1, fontSize: 12, padding: "12px 14px", borderRadius: 10, background: "#fff", borderColor: "#E8E6E0", color: "#888780", textAlign: "center", textDecoration: "none" }}>
+            Parfumo ↗
+          </a>
+        )}
+        <button onClick={(e) => { e.stopPropagation(); onRemove(wish.id); }} aria-label={`„${wish.name}" von Wunschliste entfernen`}
+          style={{
+            background: "none", border: "none", cursor: "pointer", fontSize: 13, color: "#D3D1C7",
+            width: 44, height: 44, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
+            borderRadius: 10, transition: "color .12s"
+          }}
+          onMouseEnter={function (e) { e.currentTarget.style.setProperty('color', '#E24B4A') }}
+          onMouseLeave={function (e) { e.currentTarget.style.setProperty('color', '#D3D1C7') }}>✕</button>
+      </div>
+    </div>
+  );
+}
+
+// ── WishEmptyState: ansprechender Leerzustand ──────────────────────────────────
+function WishEmptyState() {
+  return (
+    <div className="card" style={{ textAlign: "center", padding: "48px 24px", borderRadius: 16, boxShadow: "0 2px 8px rgba(0,0,0,0.04)" }}>
+      <div style={{ width: 64, height: 64, borderRadius: "50%", background: "linear-gradient(135deg, #F5F4F1 0%, #E8E6E0 100%)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}>
+        <span style={{ fontSize: 28, color: "#B4B2A9" }}>✦</span>
+      </div>
+      <div style={{ fontSize: 15, color: "#1A1A18", fontFamily: "'Georgia',serif", marginBottom: 6 }}>Noch keine Wünsche</div>
+      <div style={{ fontSize: 12, color: "#888780", lineHeight: 1.6 }}>
+        Füge Parfüms per Parfumo-Link oder manuell hinzu –<br />sie erscheinen hier sortiert nach Priorität.
+      </div>
+    </div>
+  );
 }
 
 // ── Wunschliste tab ───────────────────────────────────────────────────────────
@@ -6584,9 +6761,14 @@ function WunschlisteTab({ wishlist, onSave, items, onAddToCollection, onSelectPe
   return (
     <div>
       {/* Header with elegant title */}
-      <div style={{ marginBottom: 20 }}>
-        <h2 style={{ fontSize: 22, fontWeight: 400, fontFamily: "'Georgia',serif", color: "#1A1A18", margin: "0 0 4px", letterSpacing: "-0.5px" }}>Wunschliste</h2>
-        <p style={{ fontSize: 12, color: "#888780", margin: 0 }}>Deine Duft-Träume</p>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 20 }}>
+        <div>
+          <h2 style={{ fontSize: 22, fontWeight: 400, fontFamily: "'Georgia',serif", color: "#1A1A18", margin: "0 0 4px", letterSpacing: "-0.5px" }}>Wunschliste</h2>
+          <p style={{ fontSize: 12, color: "#888780", margin: 0 }}>Deine Duft-Träume</p>
+        </div>
+        {wishlist.length > 0 && (
+          <span style={{ fontSize: 10, letterSpacing: "1.5px", color: "#B4B2A9" }}>{wishlist.length} {wishlist.length === 1 ? "WUNSCH" : "WÜNSCHE"}</span>
+        )}
       </div>
 
       {/* Quick-add bar - elegant design */}
@@ -6674,87 +6856,32 @@ function WunschlisteTab({ wishlist, onSave, items, onAddToCollection, onSelectPe
         )}
       </div>
 
-      {/* Empty state - elegant */}
+      {/* Empty state */}
       {wishlist.length === 0 && (
-        <div style={{ textAlign: "center", padding: "60px 20px" }}>
-          <div style={{ width: 64, height: 64, borderRadius: "50%", background: "linear-gradient(135deg, #F5F4F1 0%, #E8E6E0 100%)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}>
-            <span style={{ fontSize: 28, color: "#B4B2A9" }}>✦</span>
-          </div>
-          <div style={{ fontSize: 14, color: "#888780", lineHeight: 1.6, fontFamily: "'Georgia',serif" }}>
-            Noch keine Wünsche<br />
-            <span style={{ fontSize: 12, color: "#B4B2A9" }}>Füge Parfüms per Link oder manuell hinzu</span>
-          </div>
-        </div>
+        <WishEmptyState />
       )}
 
-      {/* Wish cards - elegant design */}
+      {/* Wish cards */}
       {sorted.slice(0, wishDisplayCount).map(w => {
-        const pc = WISH_PRIOS.find(p => p.id === w.prio);
         const alreadyOwned = items.some(p => p.url && p.url === w.url);
         const daysAgo = w.added ? Math.floor((Date.now() - new Date(w.added).getTime()) / (1000 * 60 * 60 * 24)) : null;
         return (
-          <div key={w.id} onClick={() => handleWishClick(w)}
-            className="card" style={{padding: "18px 20px", marginBottom: 10,
-              borderRadius: 16, boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
-              borderLeft: `4px solid ${prioColors[w.prio] || "#D3D1C7"}`,
-              cursor: "pointer", transition: "all .2s"
-            }}
-            onMouseEnter={function (e) { e.currentTarget.style.setProperty('box-shadow', '0 4px 16px rgba(0,0,0,0.08)') }}
-            onMouseLeave={function (e) { e.currentTarget.style.setProperty('box-shadow', '0 2px 8px rgba(0,0,0,0.04)') }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 16, fontWeight: 500, fontFamily: "'Georgia',serif", color: "#1A1A18", marginBottom: 4 }}>{w.name}</div>
-                <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                  {w.house && <span style={{ fontSize: 12, color: "#888780" }}>{w.house}</span>}
-                  {daysAgo !== null && <span style={{ fontSize: 10, color: "#B4B2A9" }}>vor {daysAgo}d</span>}
-                </div>
-              </div>
-              <span style={{
-                fontSize: 10, letterSpacing: "1px", padding: "4px 10px", borderRadius: 20,
-                background: prioColors[w.prio] + "15", color: prioColors[w.prio], fontWeight: 500
-              }}>
-                {prioLabels[w.prio]}
-              </span>
-            </div>
-
-            {w.note && <div style={{ fontSize: 12, color: "#888780", marginTop: 8, fontStyle: "italic", lineHeight: 1.5, fontFamily: "'Georgia',serif" }}>"{w.note}"</div>}
-
-            <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-              {!alreadyOwned && (
-                <button onClick={(e) => { e.stopPropagation(); moveToCollection(w); }}
-                  style={{
-                    fontSize: 11, padding: "8px 14px", borderRadius: 8,
-                    border: "1px solid #E8E6E0", background: "#fff", cursor: "pointer",
-                    color: "#534AB7", fontFamily: "'Georgia',serif", transition: "all .12s"
-                  }}
-                  onMouseEnter={function (e) { e.currentTarget.style.setProperty('background', '#534AB7'); e.currentTarget.style.setProperty('color', '#fff') }}
-                  onMouseLeave={function (e) { e.currentTarget.style.setProperty('background', '#fff'); e.currentTarget.style.setProperty('color', '#534AB7') }}>
-                  → Sammlung
-                </button>
-              )}
-              {w.url && (
-                <a href={w.url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}
-                  style={{
-                    fontSize: 11, padding: "8px 14px", borderRadius: 8,
-                    border: "1px solid #E8E6E0", background: "#fff",
-                    color: "#888780", textDecoration: "none", transition: "all .12s"
-                  }}
-                  onMouseEnter={function (e) { e.currentTarget.style.setProperty('border-color', '#185FA5'); e.currentTarget.style.setProperty('color', '#185FA5') }}
-                  onMouseLeave={function (e) { e.currentTarget.style.setProperty('border-color', '#E8E6E0'); e.currentTarget.style.setProperty('color', '#888780') }}>
-                  Parfumo ↗
-                </a>
-              )}
-              <button onClick={(e) => { e.stopPropagation(); removeItem(w.id); }} aria-label={`"${w.name}" von Wunschliste entfernen`}
-                style={{
-                  background: "none", border: "none", cursor: "pointer", fontSize: 11, color: "#D3D1C7", padding: "8px", marginLeft: "auto",
-                  transition: "color .12s"
-                }}
-                onMouseEnter={function (e) { e.currentTarget.style.setProperty('color', '#E24B4A') }}
-                onMouseLeave={function (e) { e.currentTarget.style.setProperty('color', '#D3D1C7') }}>✕</button>
-            </div>
-          </div>
+          <WishCard key={w.id} wish={w}
+            prioColors={prioColors} prioLabels={prioLabels}
+            alreadyOwned={alreadyOwned} daysAgo={daysAgo}
+            onOpen={handleWishClick}
+            onMove={moveToCollection}
+            onRemove={removeItem} />
         );
       })}
+
+      {/* Mehr anzeigen */}
+      {sorted.length > wishDisplayCount && (
+        <button onClick={() => setWishDisplayCount(c => c + 15)}
+          style={{ ...S.btn("out"), width: "100%", fontSize: 12, padding: "12px", marginBottom: 8 }}>
+          Mehr anzeigen ({sorted.length - wishDisplayCount} weitere)
+        </button>
+      )}
 
       {/* Wish detail overlay – Portal-Komponente rendert in document.body */}
       {selectedWish && (
@@ -7892,7 +8019,8 @@ state.items.filter(p => p.format === "Flakon" && state.fillLevels[p.id] !== unde
           onDelete={handleDelete} onUpdate={handleUpdate}
           onExport={handleExport} onSaveNote={handleSaveNote} onLog={handleLog}
           fillLevels={state.fillLevels} onSetFill={handleSetFill}
-          priceMl={state.priceMl} onSavePriceMl={handleSavePriceMl} />
+          priceMl={state.priceMl} onSavePriceMl={handleSavePriceMl}
+          wishlist={state.wishlist} />
       )}
       {state.tab === "statistik" && (
         <StatistikTab items={state.items} log={state.log} notes={state.notes} onSelectPerfume={id => { dispatch({ type: 'SET_DETAIL', payload: null }); dispatch({ type: 'SET_BACK_STACK', payload: s => [...s, state.tab].slice(-10) }); dispatch({ type: 'SET_DETAIL', payload: id }); }} />
