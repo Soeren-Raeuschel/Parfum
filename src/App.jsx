@@ -1,3 +1,4 @@
+import ReactDOM from "react-dom"; // Fix: ReactDOM.createPortal wurde verwendet, aber nicht importiert
 import Chart from "chart.js/auto";
 import React, { useState, useEffect, useMemo, useCallback, useRef, useReducer, lazy, Suspense } from "react";
 import { Combobox, Dialog, Disclosure, Tab } from "@headlessui/react";
@@ -8,6 +9,7 @@ import { AppError, recordError, InvalidResponseError, ApiError, NetworkError, Ra
 import { FileUpload } from "./components/ui/file-upload";
 import { AiSparkle } from "./components/AiSparkle";
 import { splitNotes } from "./utils/helpers";
+import { stripDiacritics, normalizeText, tokenizeText } from "./utils/perfumeMatch"; // Fix: normalizeText/stripDiacritics/tokenizeText wurden verwendet, aber nicht importiert → "Can't find variable: normalizeText"
 
 import { getWearMap, recordWear, recordFeedback, feedbackContextKey, getPersonalBonusMap } from "./picker/wearStore";
 import { PICKER_CONFIG } from "./picker/pickerConfig";
@@ -1272,7 +1274,10 @@ async function groqFetch({ messages, temperature = 0.4, max_tokens = 200, cacheK
         lastErr = new NetworkError("Zeitüberschreitung bei der KI-Anfrage – bitte erneut versuchen.");
         console.log('WARN', `Timeout on ${modelDef.id}`);
       } else {
-        lastErr = e instanceof AppError ? e : handleApiError(e, { context: 'groqFetch' });
+        // Fix: handleApiError existiert nicht (war nie definiert/importiert) →
+        // Fehler in ApiError kapseln und in den Performance-Metriken zählen
+        lastErr = e instanceof AppError ? e : new ApiError(e?.message || "Unbekannter API-Fehler");
+        try { recordError('groqFetch'); } catch { /* Metrik ist optional */ }
         console.log('WARN', `Fetch error on ${modelDef.id}`, { error: e.message });
       }
     }
@@ -1357,6 +1362,80 @@ function buildPromptContext(params) {
   }
   return ctx;
 }
+// Fix: buildTextFromJina wurde verwendet (fetchPageTextForLookup), aber nie definiert
+// (beim Refactoring aus App_old.js verloren gegangen) → "Can't find variable: buildTextFromJina"
+// Portiert aus App_old.js: bereitet den Jina-Seitentext für den KI-Lookup auf.
+function buildTextFromJina(text) {
+  // Jina rendert Parfumo-Noten als: ![Image N: NoteName](url)NoteName
+  // Die Pyramiden-Blöcke sind: "Kopfnote\n\n![...]NoteName![...]NoteName"
+  // Basisnoten werden von Jina oft NICHT als eigener Block gerendert – direkt aus dem Bild-Muster extrahieren
+
+  function extractNotesFromBlock(block) {
+    // Muster: ![Image N: NoteName](url)NoteName  – NoteName erscheint zweimal
+    const notes = [];
+    const re = /!\[Image \d+:\s*([^\]]+)\]\([^)]+\)/g;
+    let m;
+    while ((m = re.exec(block)) !== null) {
+      const name = m[1].trim();
+      if (name && !["Kopfnote","Herznote","Basisnote","Kopfnoten","Herznoten","Basisnoten","Inspiration"].includes(name)) {
+        notes.push(name);
+      }
+    }
+    return notes.join(" · ");
+  }
+
+  // Pyramiden-Abschnitt finden: zwischen "## Duftpyramide" und nächstem "##"
+  const pyramideStart = text.indexOf("## Duftpyramide");
+  const pyramideEnd   = pyramideStart >= 0 ? text.indexOf("##", pyramideStart + 10) : -1;
+  const pyramideBlock = pyramideStart >= 0
+    ? (pyramideEnd > pyramideStart ? text.slice(pyramideStart, pyramideEnd) : text.slice(pyramideStart, pyramideStart + 3000))
+    : "";
+
+  // Innerhalb des Blocks: Kopf/Herz/Basis-Sektionen trennen
+  function extractSection(block, startMarker, endMarker) {
+    const lower = block.toLowerCase();
+    const s = lower.indexOf(startMarker.toLowerCase());
+    if (s === -1) return "";
+    const e = endMarker ? lower.indexOf(endMarker.toLowerCase(), s + startMarker.length) : -1;
+    const section = e > -1 ? block.slice(s, e) : block.slice(s);
+    return extractNotesFromBlock(section);
+  }
+
+  const topNotes    = extractSection(pyramideBlock, "Kopfnote", "Herznote");
+  const middleNotes = extractSection(pyramideBlock, "Herznote", "Basisnote");
+  // Basisnoten: erst im Pyramide-Block suchen, dann im gesamten Text (Jina lässt nb_b manchmal weg)
+  let baseNotes = extractSection(pyramideBlock, "Basisnote", "");
+  if (!baseNotes) {
+    // Suche im vollen Text nach dem Basisnoten-Bild-Muster direkt nach "Basisnote"
+    const fullLower = text.toLowerCase();
+    const bIdx = fullLower.lastIndexOf("basisnote");
+    if (bIdx >= 0) {
+      const bBlock = text.slice(bIdx, bIdx + 2000);
+      baseNotes = extractNotesFromBlock(bBlock);
+    }
+  }
+
+  const notesHint = topNotes || middleNotes || baseNotes
+    ? "\n\nExtrahierte Duftpyramide (bereits korrekt getrennt, bitte genau so übernehmen):\nKopfnoten: " + (topNotes || "–") + "\nHerznoten: " + (middleNotes || "–") + "\nBasisnoten: " + (baseNotes || "–")
+    : "";
+
+  // Detect ingredient-only pages: no pyramid but INCI/ingredients section present
+  const lowerText = text.toLowerCase();
+  const hasIngredients = !topNotes && !middleNotes && !baseNotes &&
+    (lowerText.includes("inhaltsstoff") || lowerText.includes("ingredient") ||
+     lowerText.includes("inci") || lowerText.includes("zutaten"));
+  const ingredientsHint = hasIngredients
+    ? "\n\nHINWEIS: Diese Seite enthält keine Duftpyramide (keine Kopf-/Herz-/Basisnoten), nur Inhaltsstoffe/INCI. Extrahiere erkennbare Duftstoffe aus dem Inhaltsstoffabschnitt und trage sie ausschließlich in 'base' ein. 'top' und 'middle' leer lassen."
+    : "";
+  // Seitentext bereinigen: Bild-URLs und Rezensionen kürzen um Token zu sparen
+  const cleaned = text
+    .replace(/!\[([^\]]*)\]\([^)]{20,}\)/g, (_, alt) => alt ? "[" + alt + "]" : "")  // lange Bild-URLs kürzen
+    .replace(/https?:\/\/\S+/g, "")           // restliche URLs entfernen
+    .replace(/\n{3,}/g, "\n\n")               // mehrfache Leerzeilen kürzen
+    .trim();
+  return cleaned.slice(0, LOOKUP_PAGE_MAX_CHARS) + notesHint + ingredientsHint;
+}
+
 async function fetchPageTextForLookup(safeUrl) {
   const jinaUrl = "https://r.jina.ai/" + safeUrl;
   try {
