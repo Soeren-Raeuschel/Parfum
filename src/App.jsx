@@ -2,10 +2,12 @@ import Chart from "chart.js/auto";
 import React, { useState, useEffect, useMemo, useCallback, useRef, useReducer, lazy, Suspense } from "react";
 import { Combobox, Dialog, Disclosure, Tab } from "@headlessui/react";
 import { storage } from "./data/storage";
+import { newId, sanitizePerfume, ONBOARD_STYLES } from "./data/localAdapter"; // Fix: newId/sanitizePerfume/ONBOARD_STYLES wurden verwendet, aber nicht importiert (lokale Definitionen waren auskommentiert)
 import { List as FixedSizeListVirtual } from "react-window";
 import { AppError, recordError, InvalidResponseError } from "./utils/errorHandler";
 import { FileUpload } from "./components/ui/file-upload";
 import { AiSparkle } from "./components/AiSparkle";
+import { splitNotes } from "./utils/helpers";
 
 import { getWearMap, recordWear, recordFeedback, feedbackContextKey, getPersonalBonusMap } from "./picker/wearStore";
 import { PICKER_CONFIG } from "./picker/pickerConfig";
@@ -1218,11 +1220,20 @@ async function groqFetch({ messages, temperature = 0.4, max_tokens = 200, cacheK
     if (!s || typeof s !== 'object' || s === null || s.blockedUntil > Date.now()) continue;
 
     try {
-      const res = await fetch(GROQ_CHAT_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: "Bearer " + apiKey },
-        body: JSON.stringify({ model: modelDef.id, temperature, max_completion_tokens: max_tokens, messages }),
-      });
+      // Fix: Timeout für den Request (30s), damit der Loading-State nie endlos hängt
+      const abortCtrl = new AbortController();
+      const timeoutId = setTimeout(() => abortCtrl.abort(), 30000);
+      let res;
+      try {
+        res = await fetch(GROQ_CHAT_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: "Bearer " + apiKey },
+          body: JSON.stringify({ model: modelDef.id, temperature, max_completion_tokens: max_tokens, messages }),
+          signal: abortCtrl.signal,
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
 
       _gtmParseHeaders(res.headers, modelDef.id);
 
@@ -1257,8 +1268,13 @@ async function groqFetch({ messages, temperature = 0.4, max_tokens = 200, cacheK
       if (cacheKey) groqSetOfflineCache(cacheKey, text);
       return { text, fromCache: false, model: modelDef.id };
     } catch (e) {
-      lastErr = e instanceof AppError ? e : handleApiError(e, { context: 'groqFetch' });
-      console.log('WARN', `Fetch error on ${modelDef.id}`, { error: e.message });
+      if (e && e.name === "AbortError") {
+        lastErr = new NetworkError("Zeitüberschreitung bei der KI-Anfrage – bitte erneut versuchen.");
+        console.log('WARN', `Timeout on ${modelDef.id}`);
+      } else {
+        lastErr = e instanceof AppError ? e : handleApiError(e, { context: 'groqFetch' });
+        console.log('WARN', `Fetch error on ${modelDef.id}`, { error: e.message });
+      }
     }
   }
 
@@ -3491,28 +3507,48 @@ function HeuteTab({ items, log, onLog, pushError, prefs, priceMl, onSelectPerfum
   const [wearVersion, setWearVersion] = useState(0);      // löst Wear-Map-Neuladen aus
 
   async function fetchAutoWeather() {
-    if (!navigator.geolocation) return;
+    // Wetter wird standortbasiert geladen: Zuerst Browser-Geolocation,
+    // bei Fehler/Verweigerung/Nicht-Verfügbarkeit Fallback auf Kassel.
+    // Der Abruf passiert ausschließlich über den Button (nicht beim App-Start).
     setWeatherLoading(true);
     try {
-      const pos = await new Promise((res, rej) =>
-        navigator.geolocation.getCurrentPosition(res, rej, { timeout: 8000 }));
-      const data = await withRetry(() => fetchWeather(pos.coords.latitude, pos.coords.longitude));
-      // Prüfen, ob fetchWeather einen Fehler zurückgegeben hat (Graceful Degradation)
+      let lat = KASSEL_COORDS.lat;
+      let lon = KASSEL_COORDS.lon;
+      let usedFallback = false;
+      if (navigator.geolocation) {
+        try {
+          const pos = await new Promise((res, rej) =>
+            navigator.geolocation.getCurrentPosition(res, rej, { timeout: 8000 }));
+          lat = pos.coords.latitude;
+          lon = pos.coords.longitude;
+        } catch {
+          // Geolocation verweigert/nicht verfügbar → Fallback Kassel
+          usedFallback = true;
+        }
+      } else {
+        usedFallback = true;
+      }
+      const data = await withRetry(() => fetchWeather(lat, lon));
       if (data.error) {
         if (pushError) pushError(new Error(data.error), { hint: "Wetterdaten konnten nicht geladen werden. Bitte manuell auswählen." });
         showToast("Wetter konnte nicht geladen werden");
         setWeatherData(null);
       } else {
         setWeatherData(data);
-        // Auto-apply weather
+        setTemperature(typeof data.temp === "number" ? data.temp : null);
+        // Automatisch übernehmen (gleiches Verhalten wie vorher über "Anwenden")
+        setWeather(data.effectiveWeather);
         const humid = humidityIntensityMod(data.humidity);
         if (humid) setIntensity(humid);
+        if (usedFallback) showToast("Standort nicht verfügbar – Wetter für Kassel geladen");
       }
     } catch (e) {
       if (pushError) pushError(e, { hint: "Wetterdaten konnten nicht geladen werden. Bitte manuell auswählen." });
+      showToast("Wetter konnte nicht geladen werden");
       setWeatherData(null);
+    } finally {
+      setWeatherLoading(false);
     }
-    setWeatherLoading(false);
   }
 
   function applyWeather() {
@@ -3538,26 +3574,8 @@ function HeuteTab({ items, log, onLog, pushError, prefs, priceMl, onSelectPerfum
     setTime(h < 10 ? "morning" : h < 14 ? "afternoon" : h < 20 ? "evening" : "night");
   }, []);
 
-  // ── Teil 3: Smarte Voreinstellung Wetter (Kassel, Open-Meteo, kein API-Key) ──
-  // Läuft einmal beim Mount, stiller Fallback ohne Netz, jederzeit manuell
-  // überschreibbar (Chips/Standort-Button bleiben bedienbar).
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      try {
-        const data = await withRetry(() => fetchWeather(KASSEL_COORDS.lat, KASSEL_COORDS.lon));
-        if (!alive || !data || data.error || data.effectiveWeather === "unknown") return;
-        setWeatherData(data);
-        setTemperature(typeof data.temp === "number" ? data.temp : null);
-        setWeather(data.effectiveWeather);
-        const humid = humidityIntensityMod(data.humidity);
-        if (humid) setIntensity(humid);
-      } catch {
-        // Kein Netz: still überspringen, Chips bleiben manuell wählbar
-      }
-    })();
-    return () => { alive = false; };
-  }, []);
+  // Fix: Wetter wird NICHT mehr beim App-Start geladen (früherer useEffect feuerte beim Mount).
+  // Der Abruf passiert ausschließlich über den Button (fetchAutoWeather).
 
 
   async function interpretDayDescription(text) {
@@ -3613,6 +3631,7 @@ Antworte NUR mit JSON: {"occasion":"...","mood":"...","timeOfDay":"...","intensi
   async function handleAiGenerate() {
     if (!aiText.trim()) return;
     setAiLoading(true); setAiErr("");
+    console.log('[KI] Start der Auswertung für:', aiText.trim());
     // Valid value sets – used to sanitize AI output before applying to app state
     const VALID_OCCASIONS = new Set(OCCASIONS.map(o => o.id));
     const VALID_MOODS     = new Set(MOODS.map(m => m.id));
@@ -3621,7 +3640,7 @@ Antworte NUR mit JSON: {"occasion":"...","mood":"...","timeOfDay":"...","intensi
     const VALID_LON       = new Set(LONGEVITIES.map(l => l.id));
     try {
       const result = await interpretDayDescription(aiText.trim());
-      const _fromCache = result._fromCache;
+      console.log('[KI] Antwort erhalten:', result);
       // Sanitize: only apply values that exist in the app's enum lists.
       // Unknown AI values (e.g. "formal", "happy", "focused") are silently dropped
       // so they don't corrupt the score context.
@@ -3630,6 +3649,7 @@ Antworte NUR mit JSON: {"occasion":"...","mood":"...","timeOfDay":"...","intensi
       const safeTime = VALID_TIMES.has(result.timeOfDay) ? result.timeOfDay : null;
       const safeInt  = VALID_INT.has(result.intensityPref) ? result.intensityPref : null;
       const safeLon  = VALID_LON.has(result.longevityPref) ? result.longevityPref : null;
+      console.log('[KI] Bereinigte Werte:', { safeOcc, safeMood, safeTime, safeInt, safeLon });
       if (safeOcc)  setOccasion(safeOcc);
       if (safeMood) setMood(safeMood);
       if (safeTime) setTime(safeTime);
@@ -3637,29 +3657,27 @@ Antworte NUR mit JSON: {"occasion":"...","mood":"...","timeOfDay":"...","intensi
       if (safeLon)  setLongevity(safeLon);
       setShowAiInput(false);
       setAiText("");
-      // Direkt Empfehlung generieren mit neuen Werten
-      setLoadingRecs(true);
-      setTimeout(() => {
-        const ctx = {
-          season, weather,
-          occasion: safeOcc || occasion,
-          mood: safeMood || mood,
-          timeOfDay: safeTime || timeOfDay,
-          intensityPref: safeInt || intensityPref,
-          longevityPref: safeLon || longevityPref,
-          log, userNotePrefs, userFamilyPrefs,
-          priceRange, genderPref, priceMl,
-          aiReasoning: result.reasoning
-        };
-        setRecs({ ...generateRecommendations(items, ctx), _aiReasoning: result.reasoning, _fromCache: _fromCache });
-        setWorn({});
-        setLoadingRecs(false);
-      }, 300);
-            } catch(e) {
-      setAiErr(e.message);
-      showToast(e.message);
+      // Fix: dieselbe Picker-Logik wie die manuelle Auswahl nutzen (generate()).
+      // Werte werden als overrides übergeben, da State-Updates async sind.
+      generate([], {
+        occasion: safeOcc || occasion,
+        mood: safeMood || mood,
+        timeOfDay: safeTime || timeOfDay,
+        intensityPref: safeInt || intensityPref,
+        longevityPref: safeLon || longevityPref,
+        aiReasoning: result.reasoning,
+        fromCache: result._fromCache,
+      });
+    } catch(e) {
+      // Fix: verständliche Fehlermeldung statt endlosem Laden
+      console.log('[KI] Fehler:', e);
+      const msg = e?.message || "Unbekannter Fehler bei der KI-Auswertung";
+      setAiErr(msg);
+      showToast(msg);
+    } finally {
+      // Fix: Loading-State endet immer
+      setAiLoading(false);
     }
-    setAiLoading(false);
   }
 
   const generateTimerRef = useRef(null);
@@ -3674,41 +3692,58 @@ const recCtx = useMemo(() => {
   // ── Teil 3: Empfehlung über die neue Picker-Engine (pickPerfume) ──
   // excludeExtra: zusätzliche IDs für "Anderer Vorschlag" (state-Update + Draw
   // in einem Schritt, ohne auf das React-SetState zu warten).
-  function generate(excludeExtra = []) {
+  function generate(excludeExtra = [], overrides = {}) {
     // Cancel any pending generate call so rapid double-taps don't race
     if (generateTimerRef.current) clearTimeout(generateTimerRef.current);
     setLoadingRecs(true);
+    // Fix: overrides erlauben der KI-Auswertung, dieselbe Picker-Logik wie die
+    // manuelle Auswahl zu nutzen (State-Updates sind async → Werte direkt übergeben)
+    const effOccasion = overrides.occasion ?? occasion;
+    const effMood = overrides.mood ?? mood;
+    const effTime = overrides.timeOfDay ?? timeOfDay;
+    const effIntensity = overrides.intensityPref ?? intensityPref;
+    const effLongevity = overrides.longevityPref ?? longevityPref;
     generateTimerRef.current = setTimeout(() => {
       generateTimerRef.current = null;
-      if (!items.length) { setLoadingRecs(false); return; }
-      const wearMap = getWearMap();
-      // Kontext-Schlüssel für die Lernschleife (Anlass + Stimmung)
-      const ctxKey = feedbackContextKey(occasion, mood);
-      const selection = buildPickerSelection({
-        season, weather, occasion, mood, timeOfDay,
-        intensityPref, longevityPref, temperature,
-        recentPrimaryFamilies: recentPrimaryFamilies(wearMap),
-        personalBonusMap: getPersonalBonusMap(ctxKey),
-      });
-      const result = runPickerForToday(items, wearMap, selection, {
-        excludeIds: [...excludedIds, ...excludeExtra],
-      });
-      if (!result.perfume) {
+      // Fix: try/finally – loadingRecs wird in jedem Fall zurückgesetzt
+      try {
+        if (!items.length) { showToast("Keine Parfums in der Sammlung"); return; }
+        const wearMap = getWearMap();
+        // Kontext-Schlüssel für die Lernschleife (Anlass + Stimmung)
+        const ctxKey = feedbackContextKey(effOccasion, effMood);
+        const selection = buildPickerSelection({
+          season, weather, occasion: effOccasion, mood: effMood, timeOfDay: effTime,
+          intensityPref: effIntensity, longevityPref: effLongevity, temperature,
+          recentPrimaryFamilies: recentPrimaryFamilies(wearMap),
+          personalBonusMap: getPersonalBonusMap(ctxKey),
+        });
+        const result = runPickerForToday(items, wearMap, selection, {
+          excludeIds: [...excludedIds, ...excludeExtra],
+        });
+        if (!result.perfume) {
+          setRecs(null);
+          showToast("Kein passender Duft gefunden");
+          return;
+        }
+        setLastPickInfo({ relaxed: result.relaxed, candidates: result.candidates });
+        setRecs({
+          top3: [result.perfume],
+          alts: result.alts,
+          wildcard: null,
+          _selection: selection,
+          _daysSince: daysSinceMap(wearMap, [result.perfume, ...result.alts]),
+          ...(overrides.aiReasoning ? { _aiReasoning: overrides.aiReasoning, _fromCache: overrides.fromCache } : {}),
+        });
+        setWorn({});
+      } catch (err) {
+        // Fix: Fehler sichtbar machen statt endlosem Ladezustand
+        console.log('[Picker] Fehler in generate():', err);
         setRecs(null);
-        showToast("Kein passender Duft gefunden");
+        showToast("Fehler bei der Empfehlung – bitte erneut versuchen.");
+        if (pushError) pushError(err, { hint: "Empfehlung konnte nicht berechnet werden." });
+      } finally {
         setLoadingRecs(false);
-        return;
       }
-      setLastPickInfo({ relaxed: result.relaxed, candidates: result.candidates });
-      setRecs({
-        top3: [result.perfume],
-        alts: result.alts,
-        wildcard: null,
-        _selection: selection,
-        _daysSince: daysSinceMap(wearMap, [result.perfume, ...result.alts]),
-      });
-      setWorn({});
-      setLoadingRecs(false);
     }, 300);
   }
 
@@ -3945,7 +3980,7 @@ const recCtx = useMemo(() => {
           </button>
         </div>
         {weatherData && <WeatherWidget weatherData={weatherData} onUse={applyWeather} />}
-        {!weatherData && <div style={{ fontSize: 10, color: "#B4B2A9" }}>Oder manuell unten auswählen.</div>}
+        {!weatherData && !weatherLoading && <div style={{ fontSize: 10, color: "#B4B2A9" }}>Noch kein Wetter geladen – Klick lädt das Wetter für deinen Standort (Fallback: Kassel). Oder manuell unten auswählen.</div>}
       </div>
 
       <Sec id="crit" lbl="KRITERIEN">
@@ -4161,7 +4196,7 @@ const recCtx = useMemo(() => {
           )}
           {/* Vorschlag */}
           <Sec id="res" lbl="VORSCHLAG HEUTE">
-            {recs.top3.map((p, i) => (
+            {(recs.top3 || []).map((p, i) => (
               <RecCard key={p.id} p={p} role={["top1", "top2", "top3"][i]} rank={i + 1} />
             ))}
           </Sec>
@@ -4191,7 +4226,7 @@ const recCtx = useMemo(() => {
             </button>
             {debugOpen && recs._selection && (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {[...recs.top3, ...(recs.alts || [])].map(p => {
+                {[...(recs.top3 || []), ...(recs.alts || [])].map(p => {
                   const d = debugBreakdown(p, recs._selection, getWearMap(), Date.now());
                   if (!d) return null;
                   return (
