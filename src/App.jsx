@@ -4141,7 +4141,8 @@ const recCtx = useMemo(() => {
               ))}
             </div>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+          {/* auto-fill: einheitliche Zellen – auf schmalen Screens (iPhone) rutscht der zweite Block automatisch in eine neue Zeile */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 12, marginBottom: 12 }}>
             <div><div className="lbl">TAGESZEIT</div>
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                 {TIMES.map(t => (
@@ -4160,7 +4161,7 @@ const recCtx = useMemo(() => {
             </div>
           </div>
           <div><div className="lbl">ANLASS</div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 6 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(72px, 1fr))", gap: 6 }}>
               {OCCASIONS.map(o => (
                 <button key={o.id} onClick={() => setOccasion(o.id)} aria-label={`Anlass: ${o.label}`}
                   style={{ ...chipStyle(occasion === o.id, chipCounts && chipCounts.occasion && chipCounts.occasion[o.id]), padding: "8px 2px", textAlign: "center", borderRadius: 10, minHeight: 48 }}>
@@ -4171,7 +4172,7 @@ const recCtx = useMemo(() => {
               ))}
             </div>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 12 }}>
             <div><div className="lbl">INTENSITÄT</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 {INTENSITIES.map(i => (
@@ -4199,7 +4200,7 @@ const recCtx = useMemo(() => {
 
         {/* Optionale erweiterte Filter */}
         <div style={{ marginTop: 12 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 12 }}>
             <div>
               <div className="lbl">PREISBEREICH (optional)</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
@@ -5868,7 +5869,7 @@ const PerfumeCard = React.memo(function PerfumeCard({ p, notes, onClick, noteFie
       role="button" tabIndex={0}
       aria-label={`${p.name} – ${p.house}, ${p.conc || "?"}, ${p.family || "Sonstiges"}${p.rating > 0 ? ", " + p.rating + " Sterne" : ""}`}
       onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(); } }}
-      className="card" style={{cursor: "pointer", padding: "11px 14px", marginBottom: 8,
+      className="card" style={{cursor: "pointer", padding: "8px 12px", marginBottom: 4,
         transition: "all .4s cubic-bezier(0.25,.46,.45,.94)", transform: "translateY(0)",
         boxShadow: "0 1px 3px rgba(26,26,24,0.04)"
       }}
@@ -5893,9 +5894,9 @@ const PerfumeCard = React.memo(function PerfumeCard({ p, notes, onClick, noteFie
         </div>
       </div>
       {noteHits.length > 0 && (
-        <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 7, paddingTop: 7, borderTop: "1px solid #F1EFE8" }}>
+        <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 4, paddingTop: 4, borderTop: "1px solid #F1EFE8" }}>
           {noteHits.map((h, i) => (
-            <span key={i} style={{ fontSize: 10, padding: "2px 8px", borderRadius: 20, background: "#EEEDFE", color: "#3C3489", display: "inline-flex", alignItems: "center", gap: 3 }}>
+            <span key={i} style={{ fontSize: 10, padding: "1px 7px", borderRadius: 20, background: "#EEEDFE", color: "#3C3489", display: "inline-flex", alignItems: "center", gap: 3 }}>
               <span style={{ opacity: 0.5 }}>{noteFieldLabel[h.field]}</span>{h.value}
             </span>
           ))}
@@ -6037,7 +6038,7 @@ function SammlungTab({ items, log, notes, onDelete, onUpdate, onExport, onSaveNo
   const visible = useMemo(() => filteredItems.slice(0, displayCount), [filteredItems, displayCount]);
 
   // Virtual Scrolling using react-window for large lists
-  const PERFUME_CARD_HEIGHT = 100; // Geschätzter Höhe-Wert in Pixeln
+  const PERFUME_CARD_HEIGHT = 78; // Geschätzter Höhe-Wert in Pixeln (kompakt, wenig Leerraum auf iPhone)
 
   function VirtualPerfumeList({ items, notes, onClick, noteFieldLabel, fillLevels, onSetFill, priceMl }) {
     function PerfumeRow({ index, style, ariaAttributes }) {
