@@ -1,3 +1,4 @@
+import Chart from "chart.js/auto";
 import React, { useState, useEffect, useMemo, useCallback, useRef, useReducer, lazy, Suspense } from "react";
 import { Combobox, Dialog, Disclosure, Tab } from "@headlessui/react";
 import { storage } from "./data/storage";
@@ -1931,7 +1932,7 @@ function FillLevelBadge({ fillLevel }) {
 // ══════════════════════════════════════════════════════════════════════════════
 const DNA_DIMS = [
   { id: "holzig",       label: "Holzig",    color: "#BA7517", notes: ["sandelholz", "zedernholz", "vetiver", "patschuli", "holz", "oud", "leder", "guaiac", "teak", "kastanie"] },
-  { id: "suess",        label: "Süß",       color: "#D4537E", notes: ["vanille", "tonkabohne", "karamell", "honig", "benzoe", "heliotrop", "praline", "marshmallow", "schokolade", "karamell"] },
+  { id: "suess",        label: "Süß",       color: "#D4537E", notes: ["vanille", "tonkabohne", "karamell", "honig", "benzoe", "heliotrop", "praline", "marshmallow", "schokolade"] },
   { id: "frisch",       label: "Frisch",    color: "#1D9E75", notes: ["bergamotte", "zitrone", "grapefruit", "neroli", "minze", "petitgrain", "limette", "orange", "yuzu", "pomelo"] },
   { id: "orientalisch", label: "Oriental",  color: "#993C1D", notes: ["safran", "weihrauch", "oud", "zimt", "nelke", "rum", "tabak", "tonka", "kardamom", "muskat"] },
   { id: "wuerzig",      label: "Würzig",    color: "#534AB7", notes: ["pfeffer", "ingwer", "kardamom", "kümmel", "muskatnuss", "thymian", "koriander", "rosa pfeffer", "sternanis"] },
@@ -1947,6 +1948,18 @@ const DNA_DIMS = [
   { id: "ledrig",       label: "Ledrig",    color: "#7B4F3A", notes: ["leder", "cuir", "birke", "castoreum", "aldehyd", "isoeugenol", "benzyl benzoat", "labdanum", "suede", "wildleder"] },
 ];
 
+// ── matchNoteKeyword ─────────────────────────────────────────────────────────
+// Wortgrenzen-Matching zwischen einer Noten-Bezeichnung und einem Kategorie-Keyword.
+// Verhindert Fehltreffer durch substring-Matching (z. B. „Kaffee" → „Tee"),
+// erlaubt aber Teiltreffer wie „Sandelholz" → „holz" (Wortgrenze zwischen Wörtern).
+// ─────────────────────────────────────────────────────────────────────────────
+function matchNoteKeyword(note, keyword) {
+  if (note === keyword) return true;
+  // Exaktes Schlüsselwort als eigenständiges Wort in der Note (auch in Mehrwort-Notes)
+  const kw = keyword.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(^|\\s)${kw}(\\s|$)`).test(note);
+}
+
 function computeDNA(items, log, weightByUsage = false) {
   const wc = {};
   if (weightByUsage) log.forEach(l => { wc[l.id] = (wc[l.id] || 0) + 1; });
@@ -1959,10 +1972,15 @@ function computeDNA(items, log, weightByUsage = false) {
     const w = weightByUsage ? (wc[p.id] || 0) + 1 : 1;
     itemWeightSum += w;
     const allNotes = [...splitNotes(p.top), ...splitNotes(p.middle), ...splitNotes(p.base)]
-      .map(n => n.toLowerCase().trim());
+      .map(n => n.toLowerCase().trim())
+      .filter(Boolean);
     DNA_DIMS.forEach(dim => {
-      const matches = allNotes.filter(n => dim.notes.some(k => n.includes(k) || k.includes(n))).length;
-      if (matches) scores[dim.id] += matches * w;
+      // Jede Note zählt max. 1× pro Dimension (verhindert Doppelwertung, z. B.
+      // „Sandelholz" matcht „sandelholz" UND „holz")
+      const matches = allNotes.some(n =>
+        dim.notes.some(k => matchNoteKeyword(n, k))
+      );
+      if (matches) scores[dim.id] += w;
     });
   });
 
@@ -1974,14 +1992,13 @@ function computeDNA(items, log, weightByUsage = false) {
   return DNA_DIMS.map(d => ({ ...d, value: scores[d.id] / sumScores }));
 }
 
-// ── DuftDNAChart v3 – Chart.js Radar (via CDN) ──────────────────────────────
-// Interaktiv: Hover-Tooltip, alle 15 Familien-Achsen, passendes Farbschema.
-// Fallback: Wenn Chart.js nicht geladen, zeigt SVG-Fallback.
+// ── DuftDNAChart – Chart.js Radar (als npm-Abhängigkeit gebundelt, kein CDN) ─
+// Interaktiv: Hover-Tooltip, alle 15 Familien-Achsen, pro-Achsen-Farben.
+// Kein Fallback nötig: Chart wird statisch importiert (offline-fähig).
 // ─────────────────────────────────────────────────────────────────────────────
 function DuftDNAChart({ dna }) {
   const canvasRef = useRef(null);
   const chartRef = useRef(null);
-  const [hoveredIdx, setHoveredIdx] = useState(null);
 
   const allZero = !dna || dna.every(d => d.value === 0);
 
@@ -1994,16 +2011,18 @@ function DuftDNAChart({ dna }) {
 
   useEffect(() => {
     if (allZero || !canvasRef.current) return;
-    // Destroy previous chart instance if it exists
+    // Vorherige Chart-Instanz sauber zerstören (verhindert Leaks bei Re-Renders)
     if (chartRef.current) { chartRef.current.destroy(); chartRef.current = null; }
 
-    // Check if Chart.js is available
-    if (typeof Chart === "undefined") return;
-
     const ctx = canvasRef.current.getContext("2d");
+    // Farbverlauf in der Dominant-Farbe (oben kräftig, unten fast transparent)
+    const domColor = dominant ? dominant.color : "#534AB7";
+    const gradient = ctx.createLinearGradient(0, 0, 0, canvasRef.current.height || 320);
+    gradient.addColorStop(0, domColor + "44");
+    gradient.addColorStop(1, domColor + "12");
 
-    // Gradient fill using dominant color
-    const dominantColor = dominant ? dominant.color : "#534AB7";
+    // Guard: stepSize 0 würde Chart.js zum Absturz bringen, wenn maxVal sehr klein ist
+    const stepSize = Math.max(1, Math.round(maxVal * 25));
 
     chartRef.current = new Chart(ctx, {
       type: "radar",
@@ -2012,15 +2031,17 @@ function DuftDNAChart({ dna }) {
         datasets: [{
           label: "Duft-DNA",
           data: values,
-          backgroundColor: dominantColor + "28",
-          borderColor: dominantColor,
+          backgroundColor: gradient,
+          borderColor: domColor,
           borderWidth: 2,
+          borderJoinStyle: "round",
           pointBackgroundColor: colors,
           pointBorderColor: "#fff",
           pointBorderWidth: 1.5,
           pointRadius: values.map(v => v >= 1 ? 4 : 2),
           pointHoverRadius: 7,
           pointHoverBackgroundColor: colors,
+          pointHoverBorderColor: "#1A1A18",
         }]
       },
       options: {
@@ -2031,20 +2052,13 @@ function DuftDNAChart({ dna }) {
           r: {
             beginAtZero: true,
             max: Math.round(maxVal * 100) + 5,
-            ticks: {
-              display: false,
-              stepSize: Math.round(maxVal * 25),
-            },
+            ticks: { display: false, stepSize },
             grid: { color: "#ECEAE4" },
-            angleLines: {
-              color: ctx => {
-                // Color each axis line with the matching family color
-                return "#D3D1C744";
-              }
-            },
+            angleLines: { color: "#D3D1C744" },
             pointLabels: {
+              padding: 4,
               font: { size: 10, family: "'Georgia', serif" },
-              color: (ctx) => colors[ctx.index] || "#888780",
+              color: (c) => colors[c.index] || "#888780",
               callback: (label, idx) => {
                 const v = values[idx] || 0;
                 return v >= 1 ? `${label} ${v}%` : label;
@@ -2056,9 +2070,9 @@ function DuftDNAChart({ dna }) {
           legend: { display: false },
           tooltip: {
             callbacks: {
-              label: (ctx) => {
-                const v = ctx.parsed.r;
-                return `${ctx.label}: ${v}%`;
+              label: (c) => {
+                const v = c.parsed.r;
+                return ` ${c.label}: ${v}%`;
               }
             },
             backgroundColor: "#1A1A18",
@@ -2077,7 +2091,7 @@ function DuftDNAChart({ dna }) {
     return () => {
       if (chartRef.current) { chartRef.current.destroy(); chartRef.current = null; }
     };
-  }, [dna]);
+  }, [dna]); // dna ist in DuftDNASection memoized → Effect läuft nur bei Datenwechsel
 
   if (allZero) return (
     <div style={{ textAlign: "center", color: "#888780", padding: "28px 0", fontSize: 12, lineHeight: 1.6 }}>
@@ -2136,19 +2150,24 @@ function DuftDNASection({ items, log }) {
   const [weighted, setWeighted] = useState(false);
   // EDGE CASE: leere items/log → computeDNA gibt value:0 zurück → Chart zeigt Leer-Hinweis
   const dna = useMemo(() => computeDNA(items, log, weighted), [items, log, weighted]);
+  const toggleBtn = (active) => ({
+    fontSize: 10, padding: "5px 10px", borderRadius: 16,
+    // Aktiver Toggle ist gefüllt, inaktiver nur umrandet
+    background: active ? "#E24B4A" : "transparent",
+    color: active ? "#fff" : "#E24B4A",
+    borderColor: "#F09595",
+  });
   return (
     <div className="card" style={{ marginBottom: 12 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
         <div className="lbl">DUFT-DNA RADAR</div>
         <div style={{ display: "flex", gap: 6 }}>
           <button type="button" onClick={() => setWeighted(false)}
-            className="btn btn-out"
-            style={{ fontSize: 10, padding: "5px 10px", borderRadius: 16, color: "#E24B4A", borderColor: "#F09595" }}>
+            className="btn btn-out" style={toggleBtn(!weighted)} aria-pressed={!weighted}>
             Sammlung
           </button>
           <button type="button" onClick={() => setWeighted(true)}
-            className="btn btn-out"
-            style={{ fontSize: 10, padding: "5px 10px", borderRadius: 16, color: "#E24B4A", borderColor: "#F09595" }}>
+            className="btn btn-out" style={toggleBtn(weighted)} aria-pressed={weighted}>
             Nutzung
           </button>
         </div>
