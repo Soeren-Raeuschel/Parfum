@@ -6,6 +6,21 @@ import { AppError, recordError, InvalidResponseError } from "./utils/errorHandle
 import { FileUpload } from "./components/ui/file-upload";
 import { AiSparkle } from "./components/AiSparkle";
 
+import { getWearMap, recordWear, recordFeedback, feedbackContextKey, getPersonalBonusMap } from "./picker/wearStore";
+import { PICKER_CONFIG } from "./picker/pickerConfig";
+import {
+  buildPickerSelection,
+  buildSuggestionReason,
+  runPickerForToday,
+  chipMatchCounts,
+  debugBreakdown,
+  getSprayGuide,
+  CHIP_GOOD_THRESHOLD,
+  CHIP_DIM_COUNT,
+  KASSEL_COORDS,
+} from "./picker/todayIntegration";
+
+
 
 // ── Debounce helper ─────────────────────────────────────────────────────────────
 function debounce(fn, delay) {
@@ -3448,6 +3463,14 @@ function HeuteTab({ items, log, onLog, pushError, prefs, priceMl, onSelectPerfum
      setTimeout(() => setToast(""), 2200);
    }, []);
 
+  // ── Teil 3: Neue Auswahl-Logik (pickPerfume) ──
+  const [excludedIds, setExcludedIds] = useState([]);     // in dieser Sitzung abgelehnte Vorschläge
+  const [lastPickInfo, setLastPickInfo] = useState(null); // { relaxed, candidates, relaxedThreshold }
+  const [debugOpen, setDebugOpen] = useState(false);      // Debug-Ansicht (standardmäßig zu)
+  const [feedbackFor, setFeedbackFor] = useState(null);   // Duft, der Feedback erwartet
+  const [temperature, setTemperature] = useState(null);   // Temperatur aus Open-Meteo
+  const [wearVersion, setWearVersion] = useState(0);      // löst Wear-Map-Neuladen aus
+
   async function fetchAutoWeather() {
     if (!navigator.geolocation) return;
     setWeatherLoading(true);
@@ -3479,7 +3502,7 @@ function HeuteTab({ items, log, onLog, pushError, prefs, priceMl, onSelectPerfum
     const humid = humidityIntensityMod(weatherData.humidity);
     if (humid) setIntensity(humid);
   }
-  const [open, setOpen] = useState({ crit: true, res: true, alts: true, wild: true });
+  const [open, setOpen] = useState({ crit: true, res: true, alts: true, wild: true, debug: false });
   const [loadingRecs, setLoadingRecs] = useState(false);
   // ── KI-Tagesbeschreibung ──
   const [showAiInput, setShowAiInput] = useState(false);
@@ -3495,6 +3518,28 @@ function HeuteTab({ items, log, onLog, pushError, prefs, priceMl, onSelectPerfum
     const h = new Date().getHours();
     setTime(h < 10 ? "morning" : h < 14 ? "afternoon" : h < 20 ? "evening" : "night");
   }, []);
+
+  // ── Teil 3: Smarte Voreinstellung Wetter (Kassel, Open-Meteo, kein API-Key) ──
+  // Läuft einmal beim Mount, stiller Fallback ohne Netz, jederzeit manuell
+  // überschreibbar (Chips/Standort-Button bleiben bedienbar).
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const data = await withRetry(() => fetchWeather(KASSEL_COORDS.lat, KASSEL_COORDS.lon));
+        if (!alive || !data || data.error || data.effectiveWeather === "unknown") return;
+        setWeatherData(data);
+        setTemperature(typeof data.temp === "number" ? data.temp : null);
+        setWeather(data.effectiveWeather);
+        const humid = humidityIntensityMod(data.humidity);
+        if (humid) setIntensity(humid);
+      } catch {
+        // Kein Netz: still überspringen, Chips bleiben manuell wählbar
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
+
 
   async function interpretDayDescription(text) {
     // Cache layer for interpreted results to avoid duplicate Groq calls
@@ -3607,34 +3652,146 @@ const recCtx = useMemo(() => {
   return { season, weather, occasion, mood, timeOfDay, intensityPref: effectiveIntensity, longevityPref: effectiveLongevity, log, userNotePrefs, userFamilyPrefs, priceRange, genderPref, priceMl };
 }, [season, weather, occasion, mood, timeOfDay, intensityPref, longevityPref, log, userNotePrefs, userFamilyPrefs, priceRange, genderPref, priceMl]);
 
-  function generate() {
+  // ── Teil 3: Empfehlung über die neue Picker-Engine (pickPerfume) ──
+  // excludeExtra: zusätzliche IDs für "Anderer Vorschlag" (state-Update + Draw
+  // in einem Schritt, ohne auf das React-SetState zu warten).
+  function generate(excludeExtra = []) {
     // Cancel any pending generate call so rapid double-taps don't race
     if (generateTimerRef.current) clearTimeout(generateTimerRef.current);
     setLoadingRecs(true);
     generateTimerRef.current = setTimeout(() => {
       generateTimerRef.current = null;
-      // Schlafen-Modus: Intensität immer auf Leicht setzen
-      const effectiveIntensity = (mood === "sleep" || occasion === "sleep") ? "light" : intensityPref;
-      const effectiveLongevity = (mood === "sleep" || occasion === "sleep") ? "short" : longevityPref;
-      const ctx = {
+      if (!items.length) { setLoadingRecs(false); return; }
+      const wearMap = getWearMap();
+      // Kontext-Schlüssel für die Lernschleife (Anlass + Stimmung)
+      const ctxKey = feedbackContextKey(occasion, mood);
+      const selection = buildPickerSelection({
         season, weather, occasion, mood, timeOfDay,
-        intensityPref: effectiveIntensity,
-        longevityPref: effectiveLongevity,
-        log,
-        userNotePrefs,
-        userFamilyPrefs,
-        priceRange, genderPref, priceMl,
-      };
-      setRecs(generateRecommendations(items, ctx));
+        intensityPref, longevityPref, temperature,
+        recentPrimaryFamilies: recentPrimaryFamilies(wearMap),
+        personalBonusMap: getPersonalBonusMap(ctxKey),
+      });
+      const result = runPickerForToday(items, wearMap, selection, {
+        excludeIds: [...excludedIds, ...excludeExtra],
+      });
+      if (!result.perfume) {
+        setRecs(null);
+        showToast("Kein passender Duft gefunden");
+        setLoadingRecs(false);
+        return;
+      }
+      setLastPickInfo({ relaxed: result.relaxed, candidates: result.candidates });
+      setRecs({
+        top3: [result.perfume],
+        alts: result.alts,
+        wildcard: null,
+        _selection: selection,
+        _daysSince: daysSinceMap(wearMap, [result.perfume, ...result.alts]),
+      });
       setWorn({});
       setLoadingRecs(false);
     }, 300);
   }
 
+  // App-Occasion-IDs unverändert (Aliase passieren in buildPickerSelection)
+
+  // Hauptfamilien der zuletzt getragenen Düfte (Diversität im Score)
+  function recentPrimaryFamilies(wearMap) {
+    return Object.entries(wearMap || {})
+      .filter(([, e]) => typeof e.lastWornTs === "number")
+      .sort((a, b) => b[1].lastWornTs - a[1].lastWornTs)
+      .slice(0, PICKER_CONFIG.diversityWindow)
+      .map(([id]) => {
+        const p = items.find(it => String(it.id) === id);
+        const fams = p && p.families && p.families.length > 0 ? p.families : (p && p.family ? [p.family] : []);
+        return fams[0];
+      })
+      .filter(Boolean);
+  }
+
+  // Tage-seit-Tragen pro Duft (für die Begründung)
+  function daysSinceMap(wearMap, perfumes) {
+    const DAY = 86400000;
+    const nowTs = Date.now();
+    const out = {};
+    for (const p of perfumes) {
+      const e = wearMap && wearMap[String(p.id)];
+      out[p.id] = e && typeof e.lastWornTs === "number"
+        ? Math.max(0, (nowTs - e.lastWornTs) / DAY)
+        : null;
+    }
+    return out;
+  }
+
+  // Wear-Map als Memo (aktualisiert sich über wearVersion nach jedem Tragen)
+  const wearMapMemo = useMemo(() => {
+    try { return getWearMap(); } catch { return {}; }
+  }, [wearVersion]);
+
+  // Treffer-Zähler für die Kriterien-Chips (Teil 3.5)
+  const chipCounts = useMemo(() => {
+    if (!items || items.length === 0) return null;
+    const nowTs = Date.now();
+    const base = buildPickerSelection({ season, weather, occasion, mood, timeOfDay, intensityPref, longevityPref, temperature });
+    return {
+      mood: chipMatchCounts(items, wearMapMemo, nowTs, "mood", MOODS.map(m => m.id), base),
+      time: chipMatchCounts(items, wearMapMemo, nowTs, "timeOfDay", TIMES.map(t => t.id), base),
+      weather: chipMatchCounts(items, wearMapMemo, nowTs, "weather", WEATHERS.map(w => w.id), base),
+      occasion: chipMatchCounts(items, wearMapMemo, nowTs, "occasion", OCCASIONS.map(o => o.id), base),
+      intensity: chipMatchCounts(items, wearMapMemo, nowTs, "intensity", INTENSITIES.map(i => i.id), base),
+      longevity: chipMatchCounts(items, wearMapMemo, nowTs, "longevity", LONGEVITIES.map(l => l.id), base),
+    };
+  }, [items, wearMapMemo, season, weather, occasion, mood, timeOfDay, intensityPref, longevityPref, temperature]);
+
+  // Kleiner Helfer: Chip-Stil inkl. Zähler-Badge & Dimmen
+  function chipStyle(active, count, color) {
+    const dimmed = typeof count === "number" && count <= CHIP_DIM_COUNT;
+    return {
+      ...S.chip(active, color),
+      opacity: dimmed && !active ? 0.4 : 1,
+      minHeight: 44,
+    };
+  }
+
+  function ChipCount({ count }) {
+    if (typeof count !== "number") return null;
+    return <span style={{ fontSize: 9, opacity: .7 }}>· {count}</span>;
+  }
+
+  // ── Teil 3: Tragen über wearStore.recordWear ("zuletzt getragen" +
+  // "Anzahl Trage-Tage" werden dort aktualisiert) + 1-Tap-Feedback anstoßen ──
   function wear(p, btnEl) {
-    onLog(p);
+    recordWear(p.id, Date.now());
+    onLog(p); // bestehendes Legacy-Log weiterführen (Statistik)
+    setWearVersion(v => v + 1);
     setWorn(prev => ({ ...prev, [p.id]: true }));
+    setFeedbackFor(p.id);
     triggerSprayAnimation(btnEl);
+    showToast("Getragen! Wie passte es?");
+  }
+
+  // 1-Tap-Feedback: speichert persönlichen Bonus/Malus (±0.15) pro Anlass+Stimmung
+  function sendFeedback(p, rating) {
+    try {
+      recordFeedback(p.id, feedbackContextKey(occasion, mood), rating);
+      setWearVersion(v => v + 1);
+      showToast(rating === "good" ? "Danke! Wird gemerkt." : rating === "bad" ? "Ok – merke ich mir." : "Notiert.");
+    } catch {
+      showToast("Feedback konnte nicht gespeichert werden");
+    }
+    setFeedbackFor(null);
+  }
+
+  // "Anderer Vorschlag": aktuellen Vorschlag ablehnen und neu ziehen
+  function suggestOther(p) {
+    setExcludedIds(prev => [...prev, String(p.id)]);
+    generate([String(p.id)]);
+  }
+
+  // Abgelehnte Vorschläge der Sitzung zurücksetzen
+  function resetExcluded() {
+    setExcludedIds([]);
+    showToast("Abgelehnte Vorschläge zurückgesetzt");
   }
 
   const Sec = ({ id, lbl, children }) => (
@@ -3655,7 +3812,12 @@ const recCtx = useMemo(() => {
     const families = p.families && p.families.length > 0 ? p.families : (p.family ? [p.family] : []);
     const familyDisplay = families.length > 0 ? families.join(", ") : "Sonstiges";
     const familyColor = families.length > 0 ? FAM_COLORS[families[0]] || "#888" : "#888";
-    const reason = buildReason(p, { season, weather, occasion, mood, timeOfDay, intensityPref, longevityPref, log }, role, log);
+    const reason = buildSuggestionReason(
+      p,
+      recs && recs._selection ? recs._selection : buildPickerSelection({ season, weather, occasion, mood, timeOfDay, intensityPref, longevityPref, temperature }),
+      recs && recs._daysSince ? recs._daysSince[p.id] : null,
+      wearMapMemo[p.id] && wearMapMemo[p.id].wearDays ? wearMapMemo[p.id].wearDays : 0,
+    );
     const wornNow = worn[p.id];
     const todayStr = new Date().toDateString();
     const wornToday = log.some(l => l.id === p.id && new Date(l.ts).toDateString() === todayStr);
@@ -3692,10 +3854,43 @@ const recCtx = useMemo(() => {
               <span className="pill" style={{ '--pill-bg': "#88878022", '--pill-c': "#888780" }}>{p.format}</span>
             </div>
             {(p.rating || 0) > 0 && <Stars rating={p.rating} size={12} />}
-            {/* Begründung */}
+            {/* Begründung (Teil 3.1) */}
             <div style={{ fontSize: 10, color: "#888780", marginTop: 6, lineHeight: 1.5, fontStyle: "italic" }}>
               {reason}
             </div>
+            {/* Anwendungshilfe: Sprühstöße je Anlass (Teil 3.1) */}
+            <div style={{ fontSize: 10, color: "#1A1A18", marginTop: 4, lineHeight: 1.5 }}>
+              💧 Anwendung: {getSprayGuide(occasion)}
+            </div>
+            {/* Aktionen: Tragen / Anderer Vorschlag (Teil 3.2) */}
+            {!wornNow && !wornToday && (
+              <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                <button onClick={() => suggestOther(p)}
+                  aria-label="Anderen Vorschlag ziehen"
+                  style={{ ...S.btn("out"), fontSize: 11, padding: "8px 12px", minHeight: 44, flex: 1 }}>
+                  ↻ Anderer Vorschlag
+                </button>
+              </div>
+            )}
+            {/* 1-Tap-Feedback nach dem Tragen (Teil 3.7) */}
+            {feedbackFor === p.id && (
+              <div style={{ marginTop: 10, paddingTop: 8, borderTop: "1px solid #E8E6E0" }}>
+                <div style={{ fontSize: 10, color: "#888780", marginBottom: 6 }}>Passte es heute (zu {occasion === "work" ? "Business" : occasion === "casual" ? "Alltag" : occasion === "sleep" ? "Schlafen" : occasion})?</div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  {[["good", "Passte gut", "#1D9E75"], ["ok", "Naja", "#BA7517"], ["bad", "Passte nicht", "#E24B4A"]].map(([rating, label, color]) => (
+                    <button key={rating} onClick={() => sendFeedback(p, rating)}
+                      aria-label={`Feedback: ${label}`}
+                      style={{
+                        ...S.btn("out"), flex: 1, fontSize: 10, minHeight: 44,
+                        padding: "8px 4px", color, borderColor: color,
+                        background: color + "11", borderRadius: 8,
+                      }}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
           <div style={{ marginLeft: 12, textAlign: "center", flexShrink: 0 }}>
             {wornNow || wornToday
@@ -3740,9 +3935,10 @@ const recCtx = useMemo(() => {
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8 }}>
               {MOODS.map(m => (
                 <button key={m.id} onClick={() => setMood(m.id)} aria-label={`Stimmung: ${m.label}`} className={`chip ${mood === m.id ? "active" : ""}`}
-                  style={{ ...S.chip(mood === m.id), padding: "10px 6px", textAlign: "center", borderRadius: 10 }}>
+                  style={{ ...chipStyle(mood === m.id, chipCounts && chipCounts.mood && chipCounts.mood[m.id]), padding: "10px 6px", textAlign: "center", borderRadius: 10 }}>
                   <div style={{ fontSize: 16, marginBottom: 2 }}>{m.icon}</div>
                   <div style={{ fontSize: 10 }}>{m.label}</div>
+                  <ChipCount count={chipCounts && chipCounts.mood && chipCounts.mood[m.id]} />
                 </button>
               ))}
             </div>
@@ -3752,7 +3948,7 @@ const recCtx = useMemo(() => {
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                 {TIMES.map(t => (
                   <button key={t.id} onClick={() => setTime(t.id)} aria-label={`Zeit: ${t.label}`} className="chip"
-                  style={{ ...S.chip(timeOfDay === t.id), padding: "6px 10px", fontSize: 11 }}>{t.label}</button>
+                  style={{ ...chipStyle(timeOfDay === t.id, chipCounts && chipCounts.time && chipCounts.time[t.id]), padding: "8px 12px", fontSize: 11, minHeight: 44 }}>{t.label}<ChipCount count={chipCounts && chipCounts.time && chipCounts.time[t.id]} /></button>
                 ))}
               </div>
             </div>
@@ -3760,7 +3956,7 @@ const recCtx = useMemo(() => {
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                 {WEATHERS.map(w => (
                   <button key={w.id} onClick={() => setWeather(w.id)} aria-label={`Wetter: ${w.label}`} className="chip"
-                  style={{ ...S.chip(weather === w.id), padding: "6px 10px", fontSize: 11 }}>{w.label}</button>
+                  style={{ ...chipStyle(weather === w.id, chipCounts && chipCounts.weather && chipCounts.weather[w.id]), padding: "8px 12px", fontSize: 11, minHeight: 44 }}>{w.label}<ChipCount count={chipCounts && chipCounts.weather && chipCounts.weather[w.id]} /></button>
                 ))}
               </div>
             </div>
@@ -3769,9 +3965,10 @@ const recCtx = useMemo(() => {
             <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 6 }}>
               {OCCASIONS.map(o => (
                 <button key={o.id} onClick={() => setOccasion(o.id)} aria-label={`Anlass: ${o.label}`}
-                  style={{ ...S.chip(occasion === o.id), padding: "8px 2px", textAlign: "center", borderRadius: 10 }}>
+                  style={{ ...chipStyle(occasion === o.id, chipCounts && chipCounts.occasion && chipCounts.occasion[o.id]), padding: "8px 2px", textAlign: "center", borderRadius: 10, minHeight: 48 }}>
                   <div style={{ fontSize: 14, marginBottom: 1 }}>{o.icon}</div>
                   <div style={{ fontSize: 8, lineHeight: 1.2 }}>{o.label}</div>
+                  <ChipCount count={chipCounts && chipCounts.occasion && chipCounts.occasion[o.id]} />
                 </button>
               ))}
             </div>
@@ -3782,8 +3979,8 @@ const recCtx = useMemo(() => {
                 {INTENSITIES.map(i => (
                   <button key={i.id} onClick={() => setIntensity(i.id)} aria-label={`Intensität: ${i.label}`}
                     className="chip"
-                    style={{ ...S.chip(intensityPref === i.id), display: "flex", justifyContent: "space-between", borderRadius: 8, padding: "8px 12px" }}>
-                    <span>{i.label}</span><span style={{ fontSize: 9, opacity: .7 }}>{i.note}</span>
+                    style={{ ...chipStyle(intensityPref === i.id, chipCounts && chipCounts.intensity && chipCounts.intensity[i.id]), display: "flex", justifyContent: "space-between", borderRadius: 8, padding: "8px 12px", minHeight: 44 }}>
+                    <span>{i.label}<ChipCount count={chipCounts && chipCounts.intensity && chipCounts.intensity[i.id]} /></span><span style={{ fontSize: 9, opacity: .7 }}>{i.note}</span>
                   </button>
                 ))}
               </div>
@@ -3793,8 +3990,8 @@ const recCtx = useMemo(() => {
                 {LONGEVITIES.map(l => (
                   <button key={l.id} onClick={() => setLongevity(l.id)} aria-label={`Haltbarkeit: ${l.label}`}
                     className="chip"
-                    style={{ ...S.chip(longevityPref === l.id), display: "flex", justifyContent: "space-between", borderRadius: 8, padding: "8px 12px" }}>
-                    <span>{l.label}</span><span style={{ fontSize: 9, opacity: .7 }}>{l.note}</span>
+                    style={{ ...chipStyle(longevityPref === l.id, chipCounts && chipCounts.longevity && chipCounts.longevity[l.id]), display: "flex", justifyContent: "space-between", borderRadius: 8, padding: "8px 12px", minHeight: 44 }}>
+                    <span>{l.label}<ChipCount count={chipCounts && chipCounts.longevity && chipCounts.longevity[l.id]} /></span><span style={{ fontSize: 9, opacity: .7 }}>{l.note}</span>
                   </button>
                 ))}
               </div>
@@ -3903,13 +4100,30 @@ const recCtx = useMemo(() => {
         )}
       </div>
 
-      <button onClick={generate} disabled={loadingRecs}
+      <button onClick={() => generate()} disabled={loadingRecs}
         style={{
-          ...S.btn("pri"), width: "100%", padding: "14px", borderRadius: 10, marginBottom: 20, fontSize: 14,
+          ...S.btn("pri"), width: "100%", padding: "14px", borderRadius: 10, marginBottom: 10, fontSize: 14,
           opacity: loadingRecs ? 0.6 : 1, cursor: loadingRecs ? "wait" : "pointer"
         }}>
         {loadingRecs ? "Berechne..." : (recs ? "Neu empfehlen" : "Empfehlung generieren")}
       </button>
+
+      {/* Abgelehnte Vorschläge dieser Sitzung (Teil 3.2) */}
+      {excludedIds.length > 0 && (
+        <button onClick={resetExcluded}
+          style={{ ...S.btn("out"), width: "100%", fontSize: 11, padding: "10px", borderRadius: 10, minHeight: 44, marginBottom: 20 }}>
+          {excludedIds.length} abgelehnte{excludedIds.length > 1 ? "" : "r"} Vorschlag{excludedIds.length > 1 ? "e" : ""} – zurücksetzen
+        </button>
+      )}
+
+      {/* Hinweis: was wurde gelockert (Teil 3.5) */}
+      {lastPickInfo && lastPickInfo.relaxed && lastPickInfo.relaxed.length > 0 && (
+        <div className="card" style={{ background: "#FDF6EC", border: "1px solid #BA751733", marginBottom: 12, padding: "10px 14px" }}>
+          <div style={{ fontSize: 11, color: "#BA7517", lineHeight: 1.5 }}>
+            ⚠ Weniger Treffer als sonst – gelockert: {lastPickInfo.relaxed.join(" · ")}
+          </div>
+        </div>
+      )}
 
       {recs && (
         <div>
@@ -3926,18 +4140,18 @@ const recCtx = useMemo(() => {
               </div>
             </div>
           )}
-          {/* Top 3 */}
-          <Sec id="res" lbl="TOP 3 HEUTE">
+          {/* Vorschlag */}
+          <Sec id="res" lbl="VORSCHLAG HEUTE">
             {recs.top3.map((p, i) => (
               <RecCard key={p.id} p={p} role={["top1", "top2", "top3"][i]} rank={i + 1} />
             ))}
           </Sec>
 
           {/* Alternativen */}
-          {recs.alts.length > 0 && (
-            <Sec id="alts" lbl="ALTERNATIVEN">
+          {recs.alts && recs.alts.length > 0 && (
+            <Sec id="alts" lbl="WEITERE VORSCHLÄGE">
               {recs.alts.map((p, i) => (
-                <RecCard key={p.id} p={p} role={["alt1", "alt2"][i]} rank={4 + i} />
+                <RecCard key={p.id} p={p} role={["alt1", "alt2"][i]} rank={2 + i} />
               ))}
             </Sec>
           )}
@@ -3948,6 +4162,42 @@ const recCtx = useMemo(() => {
               <RecCard p={recs.wildcard} role="wildcard" rank={0} />
             </Sec>
           )}
+
+          {/* Debug-Ansicht (Teil 3.6): aufklappbar, standardmäßig zu */}
+          <Sec id="debug" lbl="DEBUG (SCORING-DETAILS)">
+            <button onClick={() => setDebugOpen(o => !o)}
+              aria-expanded={debugOpen}
+              style={{ ...S.btn("out"), width: "100%", fontSize: 11, minHeight: 44, marginBottom: 10 }}>
+              {debugOpen ? "▲ Details verbergen" : "▼ Score-Details anzeigen"}
+            </button>
+            {debugOpen && recs._selection && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {[...recs.top3, ...(recs.alts || [])].map(p => {
+                  const d = debugBreakdown(p, recs._selection, getWearMap(), Date.now());
+                  if (!d) return null;
+                  return (
+                    <div key={p.id} className="card" style={{ padding: "10px 12px", fontSize: 10, lineHeight: 1.6 }}>
+                      <div style={{ fontSize: 12, fontWeight: 500, marginBottom: 4 }}>{d.name} <span style={{ color: "#888780", fontWeight: 400 }}>· Gesamt ≈ {d.estimatedTotal}</span></div>
+                      <div style={{ color: "#888780" }}>
+                        kriterienScore: {d.criteriaScore} · Aging: ×{d.agingFactor} ({d.daysSinceLastWorn === null ? "nie getragen" : `${d.daysSinceLastWorn} Tage`}) · Fairness: ×{d.fairnessFactor} · Zufall: {d.randomRange[0]}–{d.randomRange[1]} · Konz.-Mod.: {d.concModifier > 0 ? "+" : ""}{d.concModifier} · Diversität: {d.diversityApplied ? "−10 %" : "nein"} · Persönl. Bonus: {d.personalBonus > 0 ? "+" : ""}{d.personalBonus}
+                      </div>
+                      {d.criteria.map(c => (
+                        <div key={c.key + (c.label || "")} style={{ marginTop: 6, paddingTop: 4, borderTop: "1px dashed #E8E6E0" }}>
+                          <div><strong>{c.label}</strong> · Wert: {c.value === null || c.value === undefined ? "–" : Math.round(c.value * 100) / 100} · Gewicht: {c.weight}{c.notesScore !== undefined ? ` · Familien: ${c.famScore === null ? "–" : Math.round(c.famScore * 100) / 100} / Noten: ${c.notesScore === null ? "–" : Math.round(c.notesScore * 100) / 100}` : ""}</div>
+                          {c.details && c.details.matchedFamilies && c.details.matchedFamilies.length > 0 && (
+                            <div style={{ color: "#5C6B4F" }}>Familien: {c.details.matchedFamilies.map(m => `${m.family} (${m.cat === "haupt" ? "HAUPT" : m.cat === "neben" ? "NEBEN" : "MEIDEN"})`).join(", ")}</div>
+                          )}
+                          {c.details && c.details.matchedNotes && c.details.matchedNotes.length > 0 && (
+                            <div style={{ color: "#5C6B4F" }}>Noten: {c.details.matchedNotes.map(m => `${m.note} (${m.cat === "haupt" ? "H" : m.cat === "neben" ? "N" : "M"})`).join(", ")}</div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </Sec>
         </div>
       )}
 
