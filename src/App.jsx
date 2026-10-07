@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef, useReducer, l
 import { Combobox, Dialog, Disclosure, Tab } from "@headlessui/react";
 import { storage } from "./data/storage";
 import { newId, sanitizePerfume, ONBOARD_STYLES } from "./data/localAdapter"; // Fix: newId/sanitizePerfume/ONBOARD_STYLES wurden verwendet, aber nicht importiert (lokale Definitionen waren auskommentiert)
-import { List as FixedSizeListVirtual } from "react-window";
+import { List as FixedSizeListVirtual, useDynamicRowHeight } from "react-window";
 import { AppError, recordError, InvalidResponseError, ApiError, NetworkError, RateLimitError } from "./utils/errorHandler"; // Fix: ApiError/NetworkError/RateLimitError wurden in groqFetch verwendet, aber nicht importiert → "Can't find variable: ApiError"
 import { FileUpload } from "./components/ui/file-upload";
 import { AiSparkle } from "./components/AiSparkle";
@@ -1514,10 +1514,14 @@ function normalisiere(obj) {
     const notes = obj.notes || {};
     const joinNames = (list) => (list || []).map(n => n.name).filter(Boolean).join(", ");
 
-    // Seasons: erste Saison mit Wert > 0, sonst Ganzjährig
+    // Seasons: die Saison mit dem höchsten Wert (Gewichtung aus der Parfumo-Statistik),
+    // sonst Ganzjährig. Keys werden getrimmt, falls der Parser Whitespaces liefert.
     let season = "Ganzjährig";
-    const seasonKey = Object.keys(obj.seasons || {}).find(k => obj.seasons[k] > 0);
-    if (seasonKey) season = seasonKey;
+    const seasonEntries = Object.entries(obj.seasons || {})
+      .map(([k, v]) => [String(k).trim(), Number(v) || 0])
+      .filter(([k, v]) => k && v > 0)
+      .sort((a, b) => b[1] - a[1]);
+    if (seasonEntries.length > 0) season = seasonEntries[0][0];
 
     // Accords nach Gewicht sortiert als Namen-Liste
     const accords = (obj.accords || []);
@@ -5208,7 +5212,7 @@ function NotesEditModal({ perfume, onClose, onUpdate, onSaveNote, localNotes, on
   }
   function handleSave() {
     const patch = {};
-    ["house", "families", "season", "top", "middle", "base", "spotify_url"].forEach(k => {
+    ["house", "families", "season", "conc", "top", "middle", "base", "spotify_url"].forEach(k => {
       const oldVal = perfume[k];
       const newVal = local[k];
       const changed = (Array.isArray(newVal) || Array.isArray(oldVal))
@@ -5300,6 +5304,16 @@ function NotesEditModal({ perfume, onClose, onUpdate, onSaveNote, localNotes, on
               {SEASONS.map(s => <option key={s}>{s}</option>)}
             </select>
           </div>
+        </div>
+
+        {/* Konzentration – bei gescrapten Parfüms oft leer ("?" in der Detailansicht) */}
+        <div style={{ marginBottom: 12 }}>
+          <label htmlFor="note-conc" style={{ fontSize: 10, color: "#888780", marginBottom: 4, display: "block" }}>Konzentration</label>
+          <select id="note-conc" value={local.conc || ""} onChange={e => setField("conc", e.target.value)}
+            className="inp" style={{ ...S.inp, fontSize: 12, padding: "8px", width: "100%" }}>
+            <option value="">– keine –</option>
+            {["EDC", "EDT", "EDP", "Parfum", "Extrait", "Cologne", "Eau Fraîche"].map(c => <option key={c}>{c}</option>)}
+          </select>
         </div>
 
         {[["Kopfnoten", "top"], ["Herznoten", "middle"], ["Basisnoten", "base"]].map(([label, key]) => (
@@ -5881,6 +5895,8 @@ const PerfumeCard = React.memo(function PerfumeCard({ p, notes, onClick, noteFie
                         <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2, flexWrap: "wrap" }}>
             <span style={{ fontSize: 10, color: "#888780" }}>{p.house}</span>
             <span className="pill" style={{ fontSize: 10, padding: "2px 8px", fontWeight: 700, border: `1px solid ${CONC_COLORS[p.conc] || "#888"}`, '--pill-bg': (CONC_COLORS[p.conc] || "#888") + "22", '--pill-c': CONC_COLORS[p.conc] || "#888" }}>{p.conc}</span>
+            {/* Saison in der Übersicht anzeigen (Fallback: Ganzjährig, nie "?") */}
+            <span style={{ fontSize: 10, color: "#888780" }}>{p.season || "Ganzjährig"}</span>
           </div>
         </div>
         <div style={{ marginLeft: 10, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
@@ -5905,6 +5921,42 @@ const PerfumeCard = React.memo(function PerfumeCard({ p, notes, onClick, noteFie
     </div>
   );
 });
+
+// Virtuelle Liste für die Sammlung (react-window v2).
+// Modulebene statt SammlungTab: bleibt stabil montiert, damit die dynamisch
+// gemessenen Zeilenhöhen zwischen den Renders nicht verloren gehen.
+// Dynamische Zeilenhöhen verhindern Überlappungen, auch wenn Karten
+// unterschiedlich hoch sind (z. B. mit Noten-Treffern oder langen Namen).
+function VirtualPerfumeList({ items, notes, onClick, noteFieldLabel, fillLevels, onSetFill, priceMl }) {
+  const rowHeight = useDynamicRowHeight({ defaultRowHeight: 78 });
+
+  function PerfumeRow({ index, style, ariaAttributes }) {
+    const p = items[index];
+    if (!p) return null;
+    return (
+      <div style={style} {...ariaAttributes}>
+        <PerfumeCard
+          p={p}
+          notes={notes}
+          onClick={() => onClick(p.id)}
+          noteFieldLabel={noteFieldLabel}
+          fillLevel={fillLevels?.[p.id] ?? null}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <FixedSizeListVirtual
+      defaultHeight={items.length * 78}
+      rowCount={items.length}
+      rowHeight={rowHeight}
+      rowComponent={PerfumeRow}
+      rowProps={{}}
+      style={{ width: "100%", height: items.length * 78 }}
+    />
+  );
+}
 
 function SammlungTab({ items, log, notes, onDelete, onUpdate, onExport, onSaveNote, onLog, fillLevels, onSetFill, priceMl, onSavePriceMl, wishlist }) {
   const [rawSearch, setRawSearch] = useState("");
@@ -6037,38 +6089,6 @@ function SammlungTab({ items, log, notes, onDelete, onUpdate, onExport, onSaveNo
   useEffect(() => { setDisplayCount(15); }, [liveTerms, fam, seas, fmt, sort]);
   const visible = useMemo(() => filteredItems.slice(0, displayCount), [filteredItems, displayCount]);
 
-  // Virtual Scrolling using react-window for large lists
-  const PERFUME_CARD_HEIGHT = 78; // Geschätzter Höhe-Wert in Pixeln (kompakt, wenig Leerraum auf iPhone)
-
-  function VirtualPerfumeList({ items, notes, onClick, noteFieldLabel, fillLevels, onSetFill, priceMl }) {
-    function PerfumeRow({ index, style, ariaAttributes }) {
-      const p = items[index];
-      if (!p) return null;
-      return (
-        <div style={style} {...ariaAttributes}>
-          <PerfumeCard
-            p={p}
-            notes={notes}
-            onClick={() => onClick(p.id)}
-            noteFieldLabel={noteFieldLabel}
-            fillLevel={fillLevels?.[p.id] ?? null}
-          />
-        </div>
-      );
-    }
-
-    return (
-      <FixedSizeListVirtual
-        defaultHeight={items.length * PERFUME_CARD_HEIGHT}
-        defaultWidth={0}
-        rowCount={items.length}
-        rowHeight={PERFUME_CARD_HEIGHT}
-        rowComponent={PerfumeRow}
-        rowProps={{}}
-        style={{ width: "100%" }}
-      />
-    );
-  }
   const noteFieldLabel = { top: "↑", middle: "○", base: "↓" };
 
   if (detail) {
