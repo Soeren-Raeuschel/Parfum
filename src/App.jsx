@@ -7,6 +7,7 @@ import { newId, sanitizePerfume, ONBOARD_STYLES } from "./data/localAdapter"; //
 import { List as FixedSizeListVirtual, useDynamicRowHeight } from "react-window";
 import { AppError, recordError, InvalidResponseError, ApiError, NetworkError, RateLimitError } from "./utils/errorHandler"; // Fix: ApiError/NetworkError/RateLimitError wurden in groqFetch verwendet, aber nicht importiert → "Can't find variable: ApiError"
 import { FileUpload } from "./components/ui/file-upload";
+import EvolveCard from "./components/EvolveCard";
 import { AiSparkle } from "./components/AiSparkle";
 import { splitNotes } from "./utils/helpers";
 import { stripDiacritics, normalizeText, tokenizeText } from "./utils/perfumeMatch"; // Fix: normalizeText/stripDiacritics/tokenizeText wurden verwendet, aber nicht importiert → "Can't find variable: normalizeText"
@@ -7633,6 +7634,8 @@ function EinstellungenTab({ items, onImport, onExport, onAdd, onClearAll, onClea
   const [preview, setPreview] = useState(null);
   const [linkErr, setLinkErr] = useState("");
   const [format, setFormat] = useState("Probe");
+  // Celebration-Overlay (EvolveCard) nach erfolgreichem Hinzufügen
+  const [celebrate, setCelebrate] = useState(null);
   // Sync nameInput with appName prop (e.g. after external reset)
   const [nameInput, setNameInput] = useState(appName);
   useEffect(() => { setNameInput(appName); }, [appName]);
@@ -7695,6 +7698,7 @@ function EinstellungenTab({ items, onImport, onExport, onAdd, onClearAll, onClea
     if (!preview || !preview.name?.trim()) { setLinkErr("Name fehlt."); return; }
     onAdd({ ...preview, format });
     const name = preview.name;
+    setCelebrate({ ...preview, format }); // Celebration-Card mit 3D-Animation zeigen
     setPreview(null); setLinkUrl(""); setStatus(""); showMsg(`✓ "${name}" hinzugefügt.`);
   }
 
@@ -7955,6 +7959,10 @@ function EinstellungenTab({ items, onImport, onExport, onAdd, onClearAll, onClea
       </Dialog>
 
       <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}`}</style>
+
+      {/* Celebration-Card nach dem Bestätigen eines gescrapten Parfums.
+          key: stellt sicher, dass die Animation bei jedem Hinzufügen neu startet. */}
+      {celebrate && <EvolveCard key={celebrate.id} perfume={celebrate} onClose={() => setCelebrate(null)} />}
     </div>
   );
 }

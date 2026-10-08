@@ -237,6 +237,24 @@
       100% { transform: translate(var(--dx), var(--dy)) scale(0.2); opacity: 0; }
     }
 
+    /* ── EvolveCard (Celebration beim Hinzufügen) ──────────────── */
+    @keyframes cardSpinIn {
+      0%   { transform: rotateY(90deg) translateZ(60px) scale(.6); opacity: 0; }
+      60%  { transform: rotateY(-10deg) scale(1.05); opacity: 1; }
+      100% { transform: rotateY(0deg) scale(1); opacity: 1; }
+    }
+    /* Licht-Sweep über die Karte, startet nachdem sie gelandet ist */
+    @keyframes cardShine {
+      0%   { transform: translateX(-120%) skewX(-18deg); opacity: 0; }
+      15%  { opacity: .7; }
+      100% { transform: translateX(260%) skewX(-18deg); opacity: 0; }
+    }
+    @keyframes starBurst {
+      0%   { transform: translate(0,0) scale(.3) rotate(0deg); opacity: 0; }
+      20%  { opacity: 1; }
+      100% { transform: translate(var(--dx), var(--dy)) scale(1) rotate(140deg); opacity: 0; }
+    }
+
     @keyframes ripple {
       0% {
         transform: scale(0);
