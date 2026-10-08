@@ -88,12 +88,39 @@ function _getCacheStorage() {
   return _cacheStorage;
 }
 
+// Persistenz entprellen: viele schnelle Cache-Updates führen zu genau einem
+// localStorage-Write (synchrones localStorage ist auf iOS/Safari teuer)
+let _persistTimer = null;
 function persistCache() {
-  try {
-    localStorage.setItem(CACHE_STORAGE_KEY, JSON.stringify(Array.from(_cacheStorage.entries())));
-  } catch {
-    // Speicherversuche ignorieren
-  }
+  if (_persistTimer) return; // Es ist bereits ein Write geplant
+  _persistTimer = setTimeout(() => {
+    _persistTimer = null;
+    try {
+      localStorage.setItem(CACHE_STORAGE_KEY, JSON.stringify(Array.from(_cacheStorage.entries())));
+    } catch {
+      // Speicherversuche ignorieren
+    }
+  }, 1000);
+}
+
+// Bei Verlassen der Seite oder Tab-Wechsel den noch anstehenden Write sofort ausführen
+if (typeof window !== "undefined") {
+  const flushPendingCache = () => {
+    if (!_persistTimer) return;
+    clearTimeout(_persistTimer);
+    _persistTimer = null;
+    if (_cacheStorage && _cacheStorage.size > 0) {
+      try {
+        localStorage.setItem(CACHE_STORAGE_KEY, JSON.stringify(Array.from(_cacheStorage.entries())));
+      } catch {
+        // Speicherversuche ignorieren
+      }
+    }
+  };
+  window.addEventListener("pagehide", flushPendingCache);
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) flushPendingCache();
+  });
 }
 
 // Sichert den Cache-Eintrag und fügt ihn hinzu, wenn er noch nicht vorhanden ist
@@ -780,45 +807,47 @@ function suggestNoteCategories(top, middle, base) {
   return Object.entries(scores).sort((a, b) => b[1] - a[1]).slice(0, 2).map(([c]) => c);
 }
 // ── Enhanced debouncing with AbortController ──────────────────────────────────
+// Fix: Der AbortController wird erst beim Commit des debounced Werts neu erzeugt
+// (nicht pro Tastendruck). Damit ist das Signal zum Zeitpunkt des Sucheffekts
+// garantiert gültig und nicht bereits vom Cleanup des vorherigen Laufs abgebrochen.
 function useDebounce(value, delay = 300) {
   const [debounced, setDebounced] = useState(value);
   const timeoutRef = useRef(null);
   const abortControllerRef = useRef(null);
-  
+
   useEffect(() => {
-    // Clear previous timeout
+    // Vorherigen Timeout löschen
     if (timeoutRef.current) {
       clearTimeout(timeoutRef.current);
     }
-    
-    // Abort previous async operation (if any)
+
+    // Laufende Operation des vorherigen Werts abbrechen (neue Eingabe)
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
     }
-    
-    // Create new AbortController for this cycle
-    abortControllerRef.current = new AbortController();
-    
-    // Set new timeout
+
+    // Neuen Timeout setzen; der Controller wird erst beim Commit erzeugt,
+    // damit das Signal während des nächsten Renders frisch und nicht abgebrochen ist
     timeoutRef.current = setTimeout(() => {
+      abortControllerRef.current = new AbortController();
       setDebounced(value);
     }, delay);
-    
-    // Cleanup on unmount or before next effect run
+
+    // Cleanup beim Unmount
     return () => {
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
     };
   }, [value, delay]);
-  
-  // Return the debounced value, abort signal and an abort function for external use
-  return { 
-    debounced, 
+
+  // Signal wird zur Laufzeit aus der Ref gelesen (immer der aktuelle Controller)
+  return {
+    debounced,
     signal: abortControllerRef.current?.signal,
     abort: () => {
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }
-    }
+    },
   };
 }
 // ──────────────────────────────────────────────────────────────────────────────
@@ -4273,7 +4302,7 @@ function VirtualPerfumeList({ items, notes, onClick, noteFieldLabel, fillLevels,
 
 function SammlungTab({ items, log, notes, onDelete, onUpdate, onExport, onSaveNote, onLog, fillLevels, onSetFill, priceMl, onSavePriceMl, wishlist }) {
   const [rawSearch, setRawSearch] = useState("");
-  const { debounced: debouncedRawSearch, signal: searchSignal, abort: abortSearch } = useDebounce(rawSearch, 300);
+  const { debounced: debouncedRawSearch } = useDebounce(rawSearch, 300);
   const [activeTerms, setActiveTerms] = useState([]); // committed search terms
   const [fam, setFam] = useState("Alle");
   const [seas, setSeas] = useState("Alle");
@@ -4371,18 +4400,20 @@ function SammlungTab({ items, log, notes, onDelete, onUpdate, onExport, onSaveNo
   // Asynchronous search with AbortController to cancel obsolete requests
   // and prevent race conditions when new input arrives.
   useEffect(() => {
-    // If the search has been aborted (new input arrived), skip
-    if (searchSignal?.aborted) return;
+    // Lokaler AbortController: bricht genau diesen Suchlauf ab, wenn eine neue
+    // Suche startet oder die Komponente unmounted – ohne ein fremdes Signal zu treffen
+    const ctrl = new AbortController();
+    const { signal } = ctrl;
 
     // Schedule the search asynchronously
     const timeoutId = setTimeout(() => {
       // Double-check that the search hasn't been aborted
-      if (searchSignal?.aborted) return;
+      if (signal.aborted) return;
 
       // Run the actual filtering using shared helper
       const result = runFilters();
       // Only apply results if the search hasn't been cancelled
-      if (!searchSignal?.aborted) {
+      if (!signal.aborted) {
         setFilteredItems(result);
       }
     }, 0);
@@ -4390,9 +4421,9 @@ function SammlungTab({ items, log, notes, onDelete, onUpdate, onExport, onSaveNo
     // Cleanup: abort this search when a new one starts or on unmount
     return () => {
       clearTimeout(timeoutId);
-      abortSearch();
+      ctrl.abort();
     };
-  }, [debouncedRawSearch, searchSignal, runFilters]);
+  }, [debouncedRawSearch, runFilters]);
 
   // Also run filtering when non-search filters change (sync is fine here)
   useEffect(() => {

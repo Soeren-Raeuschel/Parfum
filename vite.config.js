@@ -12,7 +12,7 @@ export default defineConfig({
       ? [visualizer({ filename: 'dist/stats.html', open: false, gzipSize: true })]
       : []),
   ],
-  build: { target: 'esnext', sourcemap: true },
+  build: { target: 'esnext', sourcemap: 'hidden' }, // Sourcemaps werden gebaut, aber nicht referenziert/ausgeliefert → kleineres Asset-Volumen
   resolve: { alias: { '@': './src' } },
   test: {
     environment: 'jsdom',
