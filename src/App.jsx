@@ -7703,7 +7703,7 @@ function EinstellungenTab({ items, onImport, onExport, onAdd, onClearAll, onClea
   return (
     <div>
       {/* ── Präferenzen ─────────────────────────────────────── */}
-      <SettingsSection title="Präferenzen" icon="◈" defaultOpen={true}>
+      <SettingsSection title="Präferenzen" icon="◈">
         {/* App-Name */}
         <div style={{ marginBottom: 16, paddingBottom: 16, borderBottom: "1px solid #F1EFE8" }}>
           <div style={{ fontSize: 10, letterSpacing: "1px", color: "#B4B2A9", marginBottom: 8 }}>APP-NAME</div>

@@ -59,9 +59,10 @@ export const FileUpload = ({ onChange }) => {
         <span
           style={{
             display: "flex",
+            flexDirection: "column",
             alignItems: "center",
-            gap: 12,
-            transform: "translateY(-2px)",
+            gap: 8,
+            maxWidth: "100%",
           }}
         >
           <span
@@ -78,8 +79,8 @@ export const FileUpload = ({ onChange }) => {
           >
             <IconUpload size={16} stroke={1.6} />
           </span>
-          <span style={{ minWidth: 0, maxWidth: "calc(100% - 46px)" }}>
-          <span style={{ display: "block", fontSize: 12, fontWeight: 500 }}>
+          <span style={{ minWidth: 0, maxWidth: "100%", textAlign: "center" }}>
+            <span style={{ display: "block", fontSize: 12, fontWeight: 500 }}>
             {isDragActive ? "Datei hier ablegen" : "TSV-, CSV- oder JSON-Datei auswählen"}
           </span>
           <span style={{ display: "block", marginTop: 3, color: "#888780", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
