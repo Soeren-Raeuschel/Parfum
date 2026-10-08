@@ -518,7 +518,8 @@ const CONTEXT_MULTIPLIERS = [
 function rotationBonus(p, log) {
   const wears = log.filter(l => l.id === p.id);
   if (wears.length === 0) return 8; // noch nie getragen → stark bevorzugen
-  const lastWorn = Math.max(...wears.map(l => l.ts));
+  // reduce statt Math.max(...spread): Stack Overflow bei sehr vielen Einträgen (vgl. StatistikTab)
+  const lastWorn = wears.reduce((m, l) => Math.max(m, l.ts), 0);
   const daysSince = (Date.now() - lastWorn) / 86400000;
   if (daysSince > 30) return 10;   // >30 Tage → max Bonus
   if (daysSince > 14) return 7;
@@ -573,7 +574,7 @@ function buildReason(p, ctx, role, log) {
   const wears = log.filter(l => l.id === p.id);
   if (wears.length === 0) parts.push("Noch nie getragen – ideale Gelegenheit");
   else {
-    const daysSince = (Date.now() - Math.max(...wears.map(l => l.ts))) / 86400000;
+    const daysSince = (Date.now() - wears.reduce((m, l) => Math.max(m, l.ts), 0)) / 86400000;
     if (daysSince > 14) parts.push(`Zuletzt vor ${Math.round(daysSince)} Tagen`);
   }
 
@@ -2523,7 +2524,7 @@ function DeclutterTab({ items, log, onDelete, onSelectPerfume, onUpdate, declutt
         }}>{toast}</div>
       )}
 
-      <div className="card" style={{background: "#F9F8F5", marginBottom: 12 }}>
+      <div className="card" style={{background: "linear-gradient(180deg, #FFFFFF 0%, #FAF9F4 100%)", border: "1px solid #E8E6E0", boxShadow: "0 1px 2px rgba(26,26,24,0.04)", marginBottom: 12 }}>
         <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 4 }}>Sammlung aufräumen</div>
         <div style={{ fontSize: 11, color: "#888780", lineHeight: 1.6 }}>
           Parfüms die du seit {DECLUTTER_DAYS} Tagen nicht getragen hast. Neu hinzugefügte Parfüms erscheinen erst nach {FORGOTTEN_NEW_DELAY_DAYS} Tagen.
@@ -2539,17 +2540,18 @@ function DeclutterTab({ items, log, onDelete, onSelectPerfume, onUpdate, declutt
                 border: `1px solid ${filter === l ? c : "#E8E6E0"}`, cursor: "pointer",
                 background: filter === l ? c + "11" : "#fff"
               }}>
-              <div style={{ fontSize: 16, fontWeight: 400, color: c }}>{counts[l] || 0}</div>
-              <div style={{ fontSize: 8, color: c, letterSpacing: "0.2px" }}>{l.toUpperCase()}</div>
+              <div style={{ fontSize: 16, fontWeight: 500, color: c, fontVariantNumeric: "tabular-nums", lineHeight: 1.2 }}>{counts[l] || 0}</div>
+              <div style={{ fontSize: 8, color: c, letterSpacing: "0.5px", marginTop: 2 }}>{l.toUpperCase()}</div>
             </button>
         ))}
       </div>
 
       {visible.length === 0 ? (
-        <div style={{ textAlign: "center", color: "#888780", padding: "40px 0", fontSize: 13 }}>
+        <div className="card" style={{ textAlign: "center", color: "#888780", padding: "36px 16px", fontSize: 13 }}>
+          <div style={{ fontSize: 26, marginBottom: 8, opacity: 0.5 }}>✓</div>
           {suggestions.length === 0
-            ? "Alles bestens – alle Parfüms wurden kürzlich getragen! ✓"
-            : "Alle Vorschläge abgearbeitet ✓"}
+            ? "Alles bestens – alle Parfüms wurden kürzlich getragen!"
+            : "Alle Vorschläge abgearbeitet"}
         </div>
       ) : visible.slice(0, declDisplayCount).map(p => {
         const userDec = decisions[p.id];
@@ -3282,7 +3284,7 @@ function SmartMatchMode({ items }) {
 
   return (
     <div>
-      <div className="card" style={{background: "#F9F8F5", marginBottom: 12 }}>
+      <div className="card" style={{background: "linear-gradient(180deg, #FFFFFF 0%, #FAF9F4 100%)", border: "1px solid #E8E6E0", boxShadow: "0 1px 2px rgba(26,26,24,0.04)", marginBottom: 12 }}>
         <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 4 }}>Smart Match</div>
         <div style={{ fontSize: 11, color: "#888780", lineHeight: 1.6, marginBottom: 10 }}>
           Wähle ein Parfum – die App findet die besten Layer-Partner aus deiner Sammlung. Basiert auf Duftfamilien-Theorie &amp; Noten-Analyse.
@@ -3514,15 +3516,16 @@ function LayeringTab({ items }) {
   return (
     <div>
       {/* Mode switcher */}
-      <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+      <div style={{ display: "flex", background: "#F1EFE8", borderRadius: 10, padding: 3, marginBottom: 14 }}>
         {[{ id: "analyse", label: "Analyse" }, { id: "smartmatch", label: "✧ Smart Match" }].map(m => (
           <button key={m.id} onClick={() => setMode(m.id)} aria-label={`Modus: ${m.label}`}
             style={{
               flex: 1, padding: "8px 0", borderRadius: 8, border: "none",
-              background: mode === m.id ? "#1A1A18" : "#F1EFE8",
-              color: mode === m.id ? "#fff" : "#888780",
+              background: mode === m.id ? "#FFFFFF" : "transparent",
+              color: mode === m.id ? "#1A1A18" : "#888780",
               fontSize: 12, fontWeight: mode === m.id ? 600 : 400,
-              cursor: "pointer", transition: "background .2s, color .2s"
+              cursor: "pointer", transition: "background .2s, color .2s, box-shadow .2s",
+              ...(mode === m.id ? { boxShadow: "0 1px 3px rgba(26,26,24,0.12)" } : {})
             }}>
             {m.label}
           </button>
@@ -3532,7 +3535,7 @@ function LayeringTab({ items }) {
       {mode === "smartmatch" && <SmartMatchMode items={items} />}
       {mode === "analyse" && <div>
 
-      <div className="card" style={{background: "#F9F8F5", marginBottom: 12 }}>
+      <div className="card" style={{background: "linear-gradient(180deg, #FFFFFF 0%, #FAF9F4 100%)", border: "1px solid #E8E6E0", boxShadow: "0 1px 2px rgba(26,26,24,0.04)", marginBottom: 12 }}>
         <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 4 }}>Layering-Analyse</div>
         <div style={{ fontSize: 11, color: "#888780", lineHeight: 1.6 }}>
           Wähle zwei Parfüms – die App analysiert wie gut sie sich kombinieren lassen.
@@ -3649,8 +3652,8 @@ function LayeringTab({ items }) {
       )}
 
       {(!p1 || !p2) && !isSamePerfume && (
-        <div style={{ textAlign: "center", color: "#888780", fontSize: 13, padding: "40px 0" }}>
-          <div style={{ fontSize: 32, marginBottom: 12 }}>+</div>
+        <div className="card" style={{ textAlign: "center", color: "#888780", fontSize: 13, padding: "36px 16px" }}>
+          <div style={{ fontSize: 26, marginBottom: 8, opacity: 0.5 }}>+</div>
           Wähle zwei Parfüms aus deiner Sammlung
         </div>
       )}
@@ -6133,9 +6136,9 @@ function SammlungTab({ items, log, notes, onDelete, onUpdate, onExport, onSaveNo
         (fmt === "Alle" || p.format === fmt)
       );
     if (sort === "name") r = [...r].sort((a, b) => a.name.localeCompare(b.name));
-    if (sort === "house") r = [...r].sort((a, b) => a.house.localeCompare(b.house));
+    if (sort === "house") r = [...r].sort((a, b) => (a.house || "").localeCompare(b.house || ""));
     if (sort === "rating") r = [...r].sort((a, b) => (b.rating || 0) - (a.rating || 0));
-    if (sort === "family") r = [...r].sort((a, b) => a.family.localeCompare(b.family));
+    if (sort === "family") r = [...r].sort((a, b) => (a.family || "").localeCompare(b.family || ""));
     if (sort === "worn") r = [...r].sort((a, b) => (wc[b.id] || 0) - (wc[a.id] || 0));
     return r;
   }, [items, liveTerms, log, fam, seas, fmt, sort]);
@@ -6406,28 +6409,37 @@ function StatistikTab({ items, log, onSelectPerfume }) {
   const avgRatingByFam = useMemo(() => {
     const sums = {}; const cnts = {};
     items.filter(p => p.rating > 0).forEach(p => {
-      const f = p.family || "Sonstiges";
-      sums[f] = (sums[f] || 0) + p.rating; cnts[f] = (cnts[f] || 0) + 1;
+      // Gleiche Mitgliedschaft wie Profil/Drill: alle Familien, nicht nur die primäre
+      const fams = (p.families && p.families.length > 0) ? p.families : [p.family || "Sonstiges"];
+      fams.forEach(f => {
+        sums[f] = (sums[f] || 0) + p.rating; cnts[f] = (cnts[f] || 0) + 1;
+      });
     });
     return Object.entries(sums).map(([f, s]) => ([f, (s / cnts[f]).toFixed(1), cnts[f]]))
-      .sort((a, b) => b[1] - a[1]);
+      .sort((a, b) => parseFloat(b[1]) - parseFloat(a[1])); // toFixed liefert Strings → parseFloat für numerische Sortierung
   }, [items]);
 
   const monthlyWear = useMemo(() => {
     const c = {};
     log.forEach(l => {
-      const k = new Date(l.ts).toLocaleDateString("de-DE", { month: "short", year: "2-digit" });
+      // Chronologisch sortierbarer Schlüssel (YYYY-MM), Anzeige-Label erst danach
+      const d = new Date(l.ts);
+      const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
       c[k] = (c[k] || 0) + 1;
     });
-    const entries = Object.entries(c);
-    return entries.slice(-12);
+    return Object.keys(c).sort().slice(-12)
+      .map(k => {
+        const [y, m] = k.split("-").map(Number);
+        return [new Date(y, m - 1).toLocaleDateString("de-DE", { month: "short", year: "2-digit" }), c[k]];
+      });
   }, [log]);
 
   const wearByFam = useMemo(() => {
     const c = {};
     log.forEach(l => {
       const p = items.find(x => x.id === l.id);
-      if (p) { const f = p.family || "Sonstiges"; c[f] = (c[f] || 0) + 1; }
+      // Gleiche Mitgliedschaft wie Profil/Drill: alle Familien zählen
+      if (p) (p.families && p.families.length > 0 ? p.families : [p.family || "Sonstiges"]).forEach(f => { c[f] = (c[f] || 0) + 1; });
     });
     return Object.entries(c).sort((a, b) => b[1] - a[1]);
   }, [log, items]);
@@ -6456,7 +6468,9 @@ function StatistikTab({ items, log, onSelectPerfume }) {
   ];
 
   if (drill) {
-    const fi = items.filter(p => p.family === drill);
+    // Familien-Mitgliedschaft (inkl. Sekundär-/Tertiärfamilien), passend zur gewichteten Profil-Zählung
+    const hasFam = p => (p.families && p.families.length > 0 ? p.families : [p.family || "Sonstiges"]).includes(drill);
+    const fi = items.filter(hasFam);
     const fc = FAM_COLORS[drill] || "#888";
     const notes = {};
     fi.forEach(p => [...splitNotes(p.top), ...splitNotes(p.middle), ...splitNotes(p.base)]
@@ -6466,14 +6480,17 @@ function StatistikTab({ items, log, onSelectPerfume }) {
       <div>
         <button onClick={() => setDrill(null)} style={{ ...S.btn(), marginBottom: 16 }}>← Zurück</button>
         <div className="card">
-          <div style={{ fontSize: 18, color: fc, marginBottom: 4 }}>{drill}</div>
-          <div style={{ display: "flex", gap: 16, marginBottom: 16, flexWrap: "wrap" }}>
-            <div><div style={{ fontSize: 22, fontWeight: 400 }}>{fi.length}</div><div style={{ fontSize: 10, color: "#888780" }}>PARFÜMS</div></div>
-            <div><div style={{ fontSize: 22, fontWeight: 400 }}>{Math.round(fi.length / total * 100)}%</div><div style={{ fontSize: 10, color: "#888780" }}>DER SAMMLUNG</div></div>
-            <div><div style={{ fontSize: 22, fontWeight: 400 }}>{famWears}</div><div style={{ fontSize: 10, color: "#888780" }}>MAL GETRAGEN</div></div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+            <div style={{ width: 4, alignSelf: "stretch", borderRadius: 2, background: fc }} />
+            <div style={{ fontSize: 18, fontWeight: 500, color: "#1A1A18" }}>{drill}</div>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(72px, 1fr))", gap: 10, marginBottom: 16 }}>
+            <div><div style={{ fontSize: 22, fontWeight: 500, fontVariantNumeric: "tabular-nums" }}>{fi.length}</div><div style={{ fontSize: 10, color: "#888780" }}>PARFÜMS</div></div>
+            <div><div style={{ fontSize: 22, fontWeight: 500, fontVariantNumeric: "tabular-nums" }}>{Math.round(fi.length / total * 100)}%</div><div style={{ fontSize: 10, color: "#888780" }}>DER SAMMLUNG</div></div>
+            <div><div style={{ fontSize: 22, fontWeight: 500, fontVariantNumeric: "tabular-nums" }}>{famWears}</div><div style={{ fontSize: 10, color: "#888780" }}>MAL GETRAGEN</div></div>
             {fi.filter(p => p.rating > 0).length > 0 && (
               <div>
-                <div style={{ fontSize: 22, fontWeight: 400 }}>
+                <div style={{ fontSize: 22, fontWeight: 500, fontVariantNumeric: "tabular-nums" }}>
                   {(fi.filter(p => p.rating > 0).reduce((s, p) => s + p.rating, 0) / (fi.filter(p => p.rating > 0).length || 1)).toFixed(1)}
                 </div>
                 <div style={{ fontSize: 10, color: "#888780" }}>Ø BEWERTUNG</div>
@@ -6501,18 +6518,24 @@ function StatistikTab({ items, log, onSelectPerfume }) {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 8, marginBottom: 16 }}>
         {[["Gesamt", items.length], ["Flakons", items.filter(p => p.format === "Flakon").length],
         ["Bewertet", items.filter(p => p.rating > 0).length], ["Getragen", log.length]].map(([l, v]) => (
-          <div key={l} style={{ background: "#fff", border: "1px solid #E8E6E0", borderRadius: 10, padding: "10px", textAlign: "center" }}>
-            <div style={{ fontSize: 22, fontWeight: 400 }}>{v}</div>
-            <div style={{ fontSize: 9, color: "#888780", letterSpacing: "0.5px" }}>{l.toUpperCase()}</div>
+          <div key={l} style={{ background: "linear-gradient(180deg, #FFFFFF 0%, #FAF9F4 100%)", border: "1px solid #E8E6E0", borderRadius: 12, padding: "12px 8px 10px", textAlign: "center", boxShadow: "0 1px 2px rgba(26,26,24,0.04)" }}>
+            <div style={{ fontSize: 22, fontWeight: 500, color: "#1A1A18", fontVariantNumeric: "tabular-nums", lineHeight: 1.15 }}>{v}</div>
+            <div style={{ fontSize: 9, color: "#888780", letterSpacing: "0.8px", marginTop: 2 }}>{l.toUpperCase()}</div>
           </div>
         ))}
       </div>
 
-      {/* Sub-tabs */}
-      <div style={{ display: "flex", borderBottom: "1px solid #E8E6E0", marginBottom: 16 }}>
+      {/* Sub-tabs (segmentiertes Pill-Control) */}
+      <div style={{ display: "flex", background: "#F1EFE8", borderRadius: 10, padding: 3, marginBottom: 16 }}>
                     {STABS.map(t => (
           <button key={t.id} onClick={() => setStatsTab(t.id)}
-            className={S.dtab(statsTab === t.id).className} style={{ fontSize: 11 }}>{t.label}</button>
+            style={{
+              flex: 1, fontSize: 11, padding: "7px 4px", borderRadius: 8, border: "none", cursor: "pointer",
+              fontFamily: "inherit", transition: "background .15s ease, color .15s ease, box-shadow .15s ease",
+              ...(statsTab === t.id
+                ? { background: "#FFFFFF", color: "#1A1A18", fontWeight: 600, boxShadow: "0 1px 3px rgba(26,26,24,0.12)" }
+                : { background: "transparent", color: "#888780", fontWeight: 400 })
+            }}>{t.label}</button>
         ))}
       </div>
 
@@ -6563,8 +6586,9 @@ function StatistikTab({ items, log, onSelectPerfume }) {
       {statsTab === "nutzung" && (
         <div>
           {log.length === 0 ? (
-            <div style={{ textAlign: "center", color: "#888780", padding: "40px 0", fontSize: 13 }}>
-              Noch kein Trage-Verlauf. Nutze „Tragen" in der Heute-Ansicht.
+            <div className="card" style={{ textAlign: "center", color: "#888780", padding: "36px 16px", fontSize: 13 }}>
+              <div style={{ fontSize: 26, marginBottom: 8, opacity: 0.5 }}>◉</div>
+              Noch kein Trage-Verlauf.<br />Nutze „Tragen" in der Heute-Ansicht.
             </div>
           ) : (
             <div>
@@ -6668,7 +6692,10 @@ function StatistikTab({ items, log, onSelectPerfume }) {
               </div>
             ))}
             {items.filter(p => p.rating === 5).length === 0 && (
-              <div style={{ fontSize: 12, color: "#888780" }}>Noch keine 5-Sterne-Bewertungen.</div>
+              <div className="card" style={{ textAlign: "center", color: "#888780", padding: "28px 16px", fontSize: 13, marginBottom: 12 }}>
+                <div style={{ fontSize: 20, marginBottom: 6, opacity: 0.5 }}>★★★★★</div>
+                Noch keine 5-Sterne-Bewertungen.
+              </div>
             )}
           </div>
           {avgRatingByFam.length > 0 && (
@@ -6698,7 +6725,9 @@ function StatistikTab({ items, log, onSelectPerfume }) {
               </div>
             ))}
             {items.filter(p => p.rating > 0).length === 0 && (
-              <div style={{ fontSize: 12, color: "#888780" }}>Bewerte Parfüms in der Detailansicht.</div>
+              <div className="card" style={{ textAlign: "center", color: "#888780", padding: "28px 16px", fontSize: 13 }}>
+                Bewerte Parfüms in der Detailansicht.
+              </div>
             )}
           </div>
         </div>
@@ -7286,29 +7315,47 @@ function OrdnerTab({ items, onSelectPerfume }) {
   return (
     <div>
       {/* Header */}
-      <div className="card" style={{background: "#F9F8F5", marginBottom: 12 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+      <div className="card" style={{ background: "linear-gradient(180deg, #FFFFFF 0%, #FAF9F4 100%)", border: "1px solid #E8E6E0", boxShadow: "0 1px 2px rgba(26,26,24,0.04)", marginBottom: 12 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
           <div>
             <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 2 }}>Physische Ordnerstruktur</div>
             <div style={{ fontSize: 11, color: "#888780" }}>
-              {totalFolders} Hauptordner · {totalSubfolders} Unterordner · {probenItems.length} Proben (Flakons separat)
+              {probenItems.length} Proben · Flakons separat
             </div>
           </div>
+        </div>
+        {/* Mini-Stat-Kacheln */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8, marginBottom: 14 }}>
+          {[[totalFolders, "HAUPTORDNER"], [totalSubfolders, "UNTERORDNER"], [probenItems.length, "PROBEN"]].map(([v, l]) => (
+            <div key={l} style={{ background: "#fff", border: "1px solid #E8E6E0", borderRadius: 10, padding: "8px 6px", textAlign: "center" }}>
+              <div style={{ fontSize: 18, fontWeight: 500, color: "#1A1A18", fontVariantNumeric: "tabular-nums", lineHeight: 1.2 }}>{v}</div>
+              <div style={{ fontSize: 8, color: "#888780", letterSpacing: "0.7px", marginTop: 2 }}>{l}</div>
+            </div>
+          ))}
         </div>
 
         {/* Scheme selector */}
         <div className="lbl">SORTIERUNG</div>
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          {ORDNER_SCHEMES.map(sc => (
-            <button key={sc.id} onClick={() => { setScheme(sc.id); setOpenL1({}); setOpenL2({}); }}
-              style={{
-                ...S.btn("out"), padding: "8px 12px", borderRadius: 12,
-                display: "flex", flexDirection: "column", alignItems: "flex-start", textAlign: "left"
-              }}>
-              <span style={{ fontSize: 12, fontWeight: scheme === sc.id ? 500 : 400 }}>{sc.label}</span>
-              <span style={{ fontSize: 10, opacity: .7, marginTop: 1 }}>{sc.desc}</span>
-            </button>
-          ))}
+          {ORDNER_SCHEMES.map(sc => {
+            const active = scheme === sc.id;
+            return (
+              <button key={sc.id} onClick={() => { setScheme(sc.id); setOpenL1({}); setOpenL2({}); }}
+                style={{
+                  ...S.btn("out"), padding: "9px 12px", borderRadius: 12,
+                  display: "flex", flexDirection: "column", alignItems: "flex-start", textAlign: "left",
+                  ...(active
+                    ? { background: "#FFFFFF", border: "1px solid #534AB7", boxShadow: "0 1px 3px rgba(83,74,183,0.15)" }
+                    : { background: "#FFFFFF" })
+                }}>
+                <span style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%" }}>
+                  <span style={{ fontSize: 12, fontWeight: active ? 600 : 400 }}>{sc.label}</span>
+                  <span style={{ fontSize: 11, color: "#534AB7", opacity: active ? 1 : 0 }}>✓</span>
+                </span>
+                <span style={{ fontSize: 10, opacity: .7, marginTop: 1 }}>{sc.desc}</span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -7331,7 +7378,10 @@ function OrdnerTab({ items, onSelectPerfume }) {
         <div className="card" style={{marginBottom: 12 }}>
           <div className="lbl">SUCHERGEBNIS ({filteredItems.length})</div>
           {filteredItems.length === 0 && (
-            <div style={{ fontSize: 12, color: "#888780" }}>Kein Treffer.</div>
+            <div style={{ textAlign: "center", color: "#888780", padding: "24px 0", fontSize: 12 }}>
+              <div style={{ fontSize: 20, marginBottom: 6, opacity: 0.5 }}>⌕</div>
+              Kein Treffer.
+            </div>
           )}
           {filteredItems.slice(0, 20).map(p => {
             const [l1, l2] = findPath(p);
@@ -7473,11 +7523,17 @@ function OrdnerTab({ items, onSelectPerfume }) {
       })}
 
       {/* Legend */}
-      <div className="card" style={{background: "#F9F8F5", marginTop: 4 }}>
+      <div className="card" style={{ background: "linear-gradient(180deg, #FFFFFF 0%, #FAF9F4 100%)", marginTop: 4 }}>
         <div className="lbl">LEGENDE</div>
         <div style={{ fontSize: 11, color: "#888780", lineHeight: 1.8 }}>
-          <div>◼ Hauptordner = physischer Karton / Regalfach</div>
-          <div>● Unterordner = Trennkarte oder Gruppe</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: 2, background: "#888780", flexShrink: 0 }} />
+            Hauptordner = physischer Karton / Regalfach
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span aria-hidden="true" style={{ width: 6, height: 6, borderRadius: "50%", background: "#B4B2A9", flexShrink: 0 }} />
+            Unterordner = Trennkarte oder Gruppe
+          </div>
           <div style={{ marginTop: 4 }}>Jedes Parfüm erscheint genau einmal (primäre Saison / Familie).</div>
           <div>Parfüms innerhalb: nach Haus A–Z, dann Name A–Z sortiert.</div>
         </div>
@@ -8207,7 +8263,7 @@ state.items.filter(p => p.format === "Flakon" && state.fillLevels[p.id] !== unde
           wishlist={state.wishlist} />
       )}
       {state.tab === "statistik" && (
-        <StatistikTab items={state.items} log={state.log} notes={state.notes} onSelectPerfume={id => { dispatch({ type: 'SET_DETAIL', payload: null }); dispatch({ type: 'SET_BACK_STACK', payload: s => [...s, state.tab].slice(-10) }); dispatch({ type: 'SET_DETAIL', payload: id }); }} />
+        <StatistikTab items={state.items} log={state.log} onSelectPerfume={id => { dispatch({ type: 'SET_DETAIL', payload: null }); dispatch({ type: 'SET_BACK_STACK', payload: s => [...s, state.tab].slice(-10) }); dispatch({ type: 'SET_DETAIL', payload: id }); }} />
       )}
       {state.tab === "ordner" && (
         <OrdnerTab items={state.items} onSelectPerfume={id => { dispatch({ type: 'SET_DETAIL', payload: null }); dispatch({ type: 'SET_BACK_STACK', payload: s => [...s, state.tab].slice(-10) }); dispatch({ type: 'SET_DETAIL', payload: id }); }} />
