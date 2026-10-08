@@ -19,6 +19,7 @@ export const FileUpload = ({ onChange }) => {
       "text/tab-separated-values": [".tsv"],
       "text/plain": [".txt"],
       "text/csv": [".csv"],
+      "application/json": [".json"],
     },
     multiple: false,
     noClick: true,
@@ -79,7 +80,7 @@ export const FileUpload = ({ onChange }) => {
           </span>
           <span style={{ minWidth: 0, maxWidth: "calc(100% - 46px)" }}>
           <span style={{ display: "block", fontSize: 12, fontWeight: 500 }}>
-            {isDragActive ? "Datei hier ablegen" : "TSV-Datei auswählen"}
+            {isDragActive ? "Datei hier ablegen" : "TSV-, CSV- oder JSON-Datei auswählen"}
           </span>
           <span style={{ display: "block", marginTop: 3, color: "#888780", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {file ? file.name : "Ziehen oder klicken · maximal 2 MB"}

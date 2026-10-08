@@ -1576,6 +1576,89 @@ function parseTSV(text) {
     });
   }).filter(p => p.name);
 }
+
+// Gemeinsame Zuordnung: Spaltenkopf -> Feld (wird von TSV und CSV genutzt)
+function mapHeaderToFields(headerCells) {
+  const h = headerCells.map(x => x.trim().toLowerCase());
+  const idx = k => h.findIndex(x => x.includes(k));
+  return {
+    name: idx("name"), house: idx("haus"), conc: idx("konz"), family: idx("famil"),
+    top: idx("kopf"), middle: idx("herz"), base: idx("basis"), season: idx("saison"),
+    gender: idx("geschl"), format: idx("format"), url: idx("link"),
+    rating: idx("bewertung") >= 0 ? idx("bewertung") : idx("rating")
+  };
+}
+// Wandelt eine Datenzeile (Zellen-Array) in ein sanitisiertes Parfum-Objekt um
+function mapRowToPerfume(cells, m) {
+  const g = k => k >= 0 ? (cells[k] || "").trim() : "";
+  const rawRating = parseInt(g(m.rating), 10);
+  return sanitizePerfume({
+    id: newId(), name: g(m.name), house: g(m.house), conc: g(m.conc),
+    family: g(m.family) || "Sonstiges", top: g(m.top), middle: g(m.middle), base: g(m.base),
+    season: g(m.season) || "Ganzjährig", gender: g(m.gender) || "Unisex",
+    format: g(m.format) || "Probe", url: g(m.url),
+    rating: isNaN(rawRating) ? 0 : Math.min(5, Math.max(0, rawRating))
+  });
+}
+// Trennt eine CSV-Zeile in Zellen auf, respektiert Anführungszeichen ("" = escaped Quote)
+function splitCsvLine(line) {
+  const cells = [];
+  let cur = "", inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (line[i + 1] === '"') { cur += '"'; i++; }
+        else inQuotes = false;
+      } else cur += ch;
+    } else if (ch === '"') inQuotes = true;
+    else if (ch === ",") { cells.push(cur); cur = ""; }
+    else cur += ch;
+  }
+  cells.push(cur);
+  return cells;
+}
+function parseCSV(text) {
+  if (typeof text !== "string" || text.length > MAX_TSV_CHARS) return [];
+  const cleaned = text.replace(/^\uFEFF/, "").trim();
+  const lines = cleaned.split(/\r?\n/).filter(l => l.trim());
+  if (lines.length > MAX_TSV_LINES || lines.length < 2) return [];
+  const m = mapHeaderToFields(lines[0].split(","));
+  return lines.slice(1).map(line => mapRowToPerfume(splitCsvLine(line), m))
+    .filter(p => p.name);
+}
+// JSON-Import: akzeptiert den Export-Payload ({meta, items, wishlist}), ein
+// Array von Parfums oder ein einzelnes Parfum-Objekt.
+function parseJSON(text) {
+  if (typeof text !== "string" || text.length > MAX_TSV_CHARS) return [];
+  let obj;
+  try { obj = JSON.parse(text.replace(/^\uFEFF/, "").trim()); } catch { return []; }
+  let list;
+  if (Array.isArray(obj)) list = obj;
+  else if (obj && Array.isArray(obj.items)) list = obj.items;
+  else if (obj && typeof obj === "object") list = [obj];
+  else return [];
+  // Objekte ohne "name" sind keine Parfums – herausfiltern (sanitize macht das selbst)
+  return list.filter(p => p && typeof p === "object")
+    .map(p => sanitizePerfume({
+      ...p,
+      id: newId(),
+      rating: Math.min(5, Math.max(0, parseInt(p.rating, 10) || 0))
+    }))
+    .filter(p => p.name);
+}
+// Dispatcher: erkennt am Dateinamen (Fallback: Inhalt), welches Format vorliegt
+function parseImportFile(text, filename) {
+  const name = String(filename || "").toLowerCase();
+  if (name.endsWith(".json") || (!name && text && text.trim().startsWith("{"))) {
+    const parsed = parseJSON(text);
+    if (parsed.length) return parsed;
+  }
+  if (name.endsWith(".csv")) {
+    return parseCSV(text);
+  }
+  return parseTSV(text);
+}
 function downloadTSV(items) {
   const h = ["Name", "Haus", "Konzentration", "Familie", "Kopfnoten", "Herznoten",
     "Basisnoten", "Saison", "Geschlecht", "Format", "Bewertung", "Parfumo Link"];
@@ -1854,7 +1937,7 @@ function classifyError(err) {
   if (msg.includes("401") || msg.includes("403"))
     return { kind: "api", label: "Zugriff verweigert", hint: "Der externe Dienst ist momentan nicht erreichbar." };
   if (msg.includes("JSON") || msg.includes("parse"))
-    return { kind: "user", label: "Ungültiges Dateiformat", hint: "Bitte prüfe deine TSV-Datei." };
+    return { kind: "user", label: "Ungültiges Dateiformat", hint: "Bitte prüfe deine Datei (TSV, CSV oder JSON)." };
   return { kind: "system", label: "Unbekannter Fehler", hint: "Bitte App neu laden und nochmal versuchen." };
 }
 
@@ -3955,9 +4038,10 @@ const recCtx = useMemo(() => {
     };
   }
 
-  function ChipCount({ count }) {
-    if (typeof count !== "number") return null;
-    return <span style={{ fontSize: 9, opacity: .7 }}>· {count}</span>;
+  // Parfum-Anzahl wird nicht mehr angezeigt (User-Wunsch) – Komponente bleibt
+  // als No-op bestehen, damit die Aufrufe an den Schaltflächen ohne Umbau funktionieren.
+  function ChipCount() {
+    return null;
   }
 
   // ── Teil 3: Tragen über wearStore.recordWear ("zuletzt getragen" +
@@ -7513,8 +7597,8 @@ function EinstellungenTab({ items, onImport, onExport, onAdd, onClearAll, onClea
     const reader = new FileReader();
     reader.onerror = () => showMsg("Datei konnte nicht gelesen werden.", "err");
     reader.onload = e => {
-      const parsed = parseTSV(e.target.result);
-      if (!parsed.length) { showMsg("Keine Einträge – TSV-Format prüfen.", "err"); return; }
+      const parsed = parseImportFile(e.target.result, file.name);
+      if (!parsed.length) { showMsg("Keine Einträge – Format prüfen (TSV/CSV/JSON).", "err"); return; }
       // Merge: existing items matched by URL keep their ID; new items get new IDs.
       // This appends to the collection rather than replacing it.
       const urlToId = {};
@@ -7757,7 +7841,7 @@ function EinstellungenTab({ items, onImport, onExport, onAdd, onClearAll, onClea
 
         {/* TSV Import */}
         <div style={{ marginBottom: 16 }}>
-          <div style={{ fontSize: 11, color: "#B4B2A9", marginBottom: 8 }}>TSV IMPORTIEREN</div>
+          <div style={{ fontSize: 11, color: "#B4B2A9", marginBottom: 8 }}>IMPORTIEREN (TSV / CSV / JSON)</div>
           <FileUpload onChange={files => handleFile(files[0])} />
           {msg && (
             <div style={{ fontSize: 12, marginTop: 8, textAlign: "center", color: msg.type === "err" ? "#993C1D" : "#1D9E75" }}>
