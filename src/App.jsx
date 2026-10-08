@@ -152,13 +152,13 @@ function ensureCache(key, data) {
 function cachedFetch(key, fetchFn) {
   const now = Date.now();
   const memory = apiCache.get(key);
-  if (memory && now - memory.timestamp <= CACHE_TTL) {
+  if (memory && now - memory.timestamp <= CACHE_TTL && !(memory.data && memory.data.error)) {
     console.log('INFO', 'Using cached API data for key', key);
     return Promise.resolve(memory.data);
   }
   const storage = _getCacheStorage();
   const stored = storage.get(key);
-  if (stored && now - stored.timestamp <= CACHE_TTL) {
+  if (stored && now - stored.timestamp <= CACHE_TTL && !(stored.data && stored.data.error)) {
     // Cache aus localStorage in den Memory-Cache laden
     apiCache.set(key, stored);
     console.log('INFO', 'Using cached API data from storage for key', key);
@@ -1866,16 +1866,11 @@ const WMO_TO_WEATHER = {
           : WMO_TO_WEATHER[code] ?? "cloudy",
     };
   } catch (error) {
-    // Graceful Degradation: Bei Netzwerkfehler Fallback zurückgeben, statt die App abstürzen zu lassen
-    console.log('WARN', 'Wetter-Abruf fehlgeschlagen – verwende Fallback-Daten.', { error: error.message });
-    return {
-      temp: null,
-      humidity: null,
-      wmoCode: 0,
-      weather: "unknown",
-      effectiveWeather: "unknown",
-      error: error.message,
-    };
+    // Fehler NICHT abfangen: So kann withRetry() mit Backoff erneut versuchen und
+    // cachedFetch() cached keine Fehlerfälle (503 etc.) für die ganze TTL.
+    // Die eigentliche Fehlerbehandlung (Toast/Fallback) passiert in fetchAutoWeather().
+    console.log('WARN', 'Wetter-Abruf fehlgeschlagen.', { error: error.message });
+    throw error;
   }
   });
 }
@@ -2034,19 +2029,14 @@ function HeuteTab({ items, log, onLog, pushError, prefs, priceMl, onSelectPerfum
         usedFallback = true;
       }
       const data = await withRetry(() => fetchWeather(lat, lon));
-      if (data.error) {
-        if (pushError) pushError(new Error(data.error), { hint: "Wetterdaten konnten nicht geladen werden. Bitte manuell auswählen." });
-        showToast("Wetter konnte nicht geladen werden");
-        setWeatherData(null);
-      } else {
-        setWeatherData(data);
+      // fetchWeather wirft bei Fehlern jetzt (nach 3 Retry-Versuchen) – der catch-Block unten behandelt sie
+      setWeatherData(data);
         setTemperature(typeof data.temp === "number" ? data.temp : null);
         // Automatisch übernehmen (gleiches Verhalten wie vorher über "Anwenden")
         setWeather(data.effectiveWeather);
         const humid = humidityIntensityMod(data.humidity);
         if (humid) setIntensity(humid);
         if (usedFallback) showToast("Standort nicht verfügbar – Wetter für Kassel geladen");
-      }
     } catch (e) {
       if (pushError) pushError(e, { hint: "Wetterdaten konnten nicht geladen werden. Bitte manuell auswählen." });
       showToast("Wetter konnte nicht geladen werden");
