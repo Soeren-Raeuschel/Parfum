@@ -13,6 +13,8 @@ const CustomScrollbar = () => {
   const scrollTimeoutRef = useRef(null);
   const dragStartYRef = useRef(0);
   const dragStartScrollTopRef = useRef(0);
+  const rafRef = useRef(0);
+  const wasScrollingRef = useRef(false);
 
   // Zentrale Rechenfunktion für Slider-Höhe und Position
   const updateScrollbar = () => {
@@ -66,14 +68,26 @@ const CustomScrollbar = () => {
       document.head.appendChild(style);
     }
 
-    // 2. Scroll-Handler
+    // 2. Scroll-Handler (rAF-gebündelt, um Layout-Thrashing und
+    //    React-Re-Renders bei jedem Scroll-Frame zu vermeiden – iOS-Performance)
     const handleScroll = () => {
       if (dragStartYRef.current !== 0) return;
-      setIsScrolling(true);
-      updateScrollbar();
+
+      // setIsScrolling nur einmal pro Scroll-Phase statt bei jedem Event
+      if (!wasScrollingRef.current) {
+        wasScrollingRef.current = true;
+        setIsScrolling(true);
+      }
+
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      rafRef.current = requestAnimationFrame(() => {
+        rafRef.current = 0;
+        updateScrollbar();
+      });
 
       if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
       scrollTimeoutRef.current = setTimeout(() => {
+        wasScrollingRef.current = false;
         setIsScrolling(false);
       }, 400);
     };
@@ -121,6 +135,7 @@ const CustomScrollbar = () => {
       window.removeEventListener("wheel", handleWheel);
       window.removeEventListener("resize", updateScrollbar);
       resizeObserver.disconnect();
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
       if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
     };
   }, []);
