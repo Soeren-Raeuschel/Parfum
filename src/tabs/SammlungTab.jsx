@@ -1,13 +1,12 @@
 /**
  * SammlungTab.jsx – Sammlungs-Ansicht (aus App.jsx ausgelagert):
- * SammlungTab, DetailView, PerfumeCard, VirtualPerfumeList,
+ * SammlungTab, DetailView, PerfumeCard, PerfumeList,
  * SpotifyCard, NotesEditModal, ReloadDiffModal, CostPerWear*,
  * BrandInfo, FunFactsCard, FillLevelEditor und MoodHeader.
  */
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { Dialog } from "@headlessui/react";
-import { List as FixedSizeListVirtual, useDynamicRowHeight } from "react-window";
 import { S, FamilyPill, Stars, useBodyLock } from "../shared/ui";
 import { CONC_COLORS, FAMILIES, FAM_COLORS, NOTE_CAT_COLORS, SEASONS, primaryFamily } from "../shared/constants";
 import { splitNotes } from "../utils/helpers";
@@ -1352,39 +1351,25 @@ const PerfumeCard = React.memo(function PerfumeCard({ p, notes, onClick, noteFie
   );
 });
 
-// Virtuelle Liste für die Sammlung (react-window v2).
-// Modulebene statt SammlungTab: bleibt stabil montiert, damit die dynamisch
-// gemessenen Zeilenhöhen zwischen den Renders nicht verloren gehen.
-// Dynamische Zeilenhöhen verhindern Überlappungen, auch wenn Karten
-// unterschiedlich hoch sind (z. B. mit Noten-Treffern oder langen Namen).
-function VirtualPerfumeList({ items, notes, onClick, noteFieldLabel, fillLevels, onSetFill, priceMl }) {
-  const rowHeight = useDynamicRowHeight({ defaultRowHeight: 78 });
-
-  function PerfumeRow({ index, style, ariaAttributes }) {
-    const p = items[index];
-    if (!p) return null;
-    return (
-      <div style={style} {...ariaAttributes}>
+// Liste der Sammlungs-Karten: bewusst KEINE react-window-Virtualisierung mehr.
+// react-window rendert einen eigenen inneren Scroll-Container – auf dem iPhone
+// führt das zu doppeltem Scrollen (Kopf scrollt, danach scrollen die Parfums
+// ein zweites Mal). Stattdessen normal im Seiten-Container scrollen und die
+// Anzahl der Karten über displayCount ("Weitere laden") begrenzen.
+function PerfumeList({ items, notes, onClick, noteFieldLabel, fillLevels }) {
+  return (
+    <div role="list" aria-label="Parfums">
+      {items.map(p => (
         <PerfumeCard
+          key={p.id}
           p={p}
           notes={notes}
           onClick={() => onClick(p.id)}
           noteFieldLabel={noteFieldLabel}
           fillLevel={fillLevels?.[p.id] ?? null}
         />
-      </div>
-    );
-  }
-
-  return (
-    <FixedSizeListVirtual
-      defaultHeight={items.length * 78}
-      rowCount={items.length}
-      rowHeight={rowHeight}
-      rowComponent={PerfumeRow}
-      rowProps={{}}
-      style={{ width: "100%", height: items.length * 78 }}
-    />
+      ))}
+    </div>
   );
 }
 
@@ -1398,7 +1383,7 @@ function SammlungTab({ items, log, notes, onDelete, onUpdate, onExport, onSaveNo
   const [sort, setSort] = useState("name");
   const [detail, setDetail] = useState(null);
   const [showNotesPicker, setShowNotesPicker] = useState(false);
-  const [displayCount, setDisplayCount] = useState(15);
+  const [displayCount, setDisplayCount] = useState(20);
   const [filteredItems, setFilteredItems] = useState([]);
   const [exportToast, setExportToast] = useState("");
   const inputRef = useRef(null);
@@ -1518,7 +1503,7 @@ function SammlungTab({ items, log, notes, onDelete, onUpdate, onExport, onSaveNo
     setFilteredItems(runFilters());
   }, [runFilters]);
   // Reset displayCount when filters change
-  useEffect(() => { setDisplayCount(15); }, [liveTerms, fam, seas, fmt, sort]);
+  useEffect(() => { setDisplayCount(20); }, [liveTerms, fam, seas, fmt, sort]);
   const visible = useMemo(() => filteredItems.slice(0, displayCount), [filteredItems, displayCount]);
 
   const noteFieldLabel = { top: "↑", middle: "○", base: "↓" };
@@ -1670,18 +1655,16 @@ function SammlungTab({ items, log, notes, onDelete, onUpdate, onExport, onSaveNo
           <div className="skeleton" style={{ width: "100%", height: 40, borderRadius: 12, marginTop: 8 }} />
         </div>
       ) : (
-        <VirtualPerfumeList
-          items={filteredItems}
+        <PerfumeList
+          items={visible}
           notes={notes}
           onClick={setDetail}
           noteFieldLabel={noteFieldLabel}
           fillLevels={fillLevels}
-          onSetFill={onSetFill}
-          priceMl={priceMl}
         />
       )}
       {filteredItems.length > displayCount && (
-        <button onClick={() => setDisplayCount(c => c + 15)}
+        <button onClick={() => setDisplayCount(c => c + 20)}
           style={{ ...S.btn("out"), width: "100%", fontSize: 12, padding: "12px", marginBottom: 8 }}>
           Mehr anzeigen ({filteredItems.length - displayCount} weitere)
         </button>

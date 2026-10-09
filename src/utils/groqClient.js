@@ -157,7 +157,7 @@ async function groqFetch({ messages, temperature = 0.4, max_tokens = 200, cacheK
         res = await fetch(GROQ_CHAT_URL, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ model: modelDef.id, temperature, max_completion_tokens: max_tokens, messages }),
+          body: JSON.stringify({ model: modelDef.id, temperature, max_tokens, messages }), // "max_tokens" – nur dieses Feld validiert/reicht der Proxy (groq.mjs) weiter
           signal: abortCtrl.signal,
         });
       } finally {
