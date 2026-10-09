@@ -6,6 +6,9 @@
  * parseImportFile und MAX_IMPORT_BYTES sind inline exportiert.
  */
 
+// Fix: sanitizePerfume/newId wurden verwendet, aber nicht importiert → ReferenceError beim Import
+import { sanitizePerfume, newId } from "../data/localAdapter";
+
 function sanitizeField(v) {
   return (v === null || v === undefined ? "" : String(v)).replace(/[\t\r\n]/g, " ").trim();
 }

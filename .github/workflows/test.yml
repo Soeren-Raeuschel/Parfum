@@ -21,3 +21,18 @@ jobs:
       run: npm ci
     - name: Run ESLint
       run: npx eslint .
+    - name: Run Unit Tests (Vitest)
+      run: npm run test:unit
+    - name: Build
+      run: npm run build
+    - name: Install Playwright Browsers
+      run: npx playwright install --with-deps chromium
+    - name: Run E2E Tests
+      run: npm run e2e
+    - name: Upload Test Results bei Fehlern
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: playwright-results
+        path: test-results/
+        if-no-files-found: ignore

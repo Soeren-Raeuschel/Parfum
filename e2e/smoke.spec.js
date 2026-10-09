@@ -45,3 +45,19 @@ test('Haupt-Interaktion funktioniert', async ({ page }) => {
 
   await expect(page.getByText(/Keine Parfüms gefunden/)).toBeVisible()
 })
+
+test('Alle Tabs lassen sich ohne Fehler durchklicken', async ({ page }) => {
+  await prepareEmptyApp(page)
+  const errors = collectPageErrors(page)
+  await page.goto('/', { waitUntil: 'domcontentloaded' })
+
+  const tabNames = ['HEUTE', 'SAMMLUNG', 'STATISTIK', 'ORDNER', 'LAYERING', 'VERGESSEN', 'WÜNSCHE', 'SETTINGS']
+  for (const name of tabNames) {
+    const tab = page.getByRole('tab', { name })
+    await tab.click()
+    await expect(tab).toHaveAttribute('aria-selected', 'true')
+  }
+
+  expect(errors.consoleErrors).toEqual([])
+  expect(errors.pageErrors).toEqual([])
+})

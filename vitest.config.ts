@@ -14,6 +14,13 @@ export default defineConfig({
       provider: 'v8',
       reporter: ['text', 'json', 'html'],
       exclude: ['node_modules/', 'src/App.jsx', 'src/App_old.js', 'tests/', 'e2e/', 'dist/'],
+      // Untergrenzen = aktueller Ist-Stand; neue Features dürfen die Quote nicht senken
+      thresholds: {
+        statements: 30,
+        lines: 30,
+        functions: 58,
+        branches: 78,
+      },
     },
   },
 });
