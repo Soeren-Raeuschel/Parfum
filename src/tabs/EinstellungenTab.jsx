@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Disclosure, Dialog } from "@headlessui/react";
 import { S } from "../shared/ui";
-import { FAMILIES, FAM_COLORS, NOTE_CATEGORIES, NOTE_CAT_COLORS, validateParfumoLookupUrl, extrahiereBrandName } from "../shared/constants";
+import { FAMILIES, FAM_COLORS, NOTE_CATEGORIES, NOTE_CAT_COLORS, SEASONS, validateParfumoLookupUrl, extrahiereBrandName } from "../shared/constants";
 import EvolveCard from "../components/EvolveCard";
 import { FileUpload } from "../components/ui/file-upload";
 import { newId } from "../data/localAdapter";
@@ -300,6 +300,21 @@ function EinstellungenTab({ items, onImport, onExport, onAdd, onClearAll, onClea
                   placeholder="Herznoten" className="ta" style={{ ...S.ta, minHeight: 48, fontSize: 12 }} />
                 <textarea value={preview.base || ""} onChange={e => setPreview(p => ({ ...p, base: e.target.value }))}
                   placeholder="Basisnoten" className="ta" style={{ ...S.ta, minHeight: 48, fontSize: 12 }} />
+                {/* Saison: bewusst als Auswahlfeld, damit sich die Jahreszeit auch
+                    nachträglich setzen lässt, wenn Parfumo kein Chart liefert. */}
+                <div>
+                  <label htmlFor="preview-season" style={{ fontSize: 10, color: "#888780", marginBottom: 4, display: "block" }}>Saison</label>
+                  <select id="preview-season" value={preview.season || "Ganzjährig"}
+                    onChange={e => setPreview(p => ({
+                      ...p,
+                      season: e.target.value,
+                      // Jahreszeiten-Verteilung mitführen, damit die Anzeige konsistent bleibt
+                      seasons: e.target.value === "Ganzjährig" ? p.seasons : { [e.target.value]: 100 },
+                    }))}
+                    className="inp" style={{ ...S.inp, fontSize: 12, padding: "8px", width: "100%" }}>
+                    {SEASONS.map(s => <option key={s}>{s}</option>)}
+                  </select>
+                </div>
                 {/* Neue Felder aus der Netlify Function (optional, zur Information) */}
                 <input value={preview.year || ""} onChange={e => setPreview(p => ({ ...p, year: e.target.value }))}
                   placeholder="Jahr (Veröffentlichung)" className="inp" style={{ ...S.inp, fontSize: 12 }} />
@@ -322,7 +337,9 @@ function EinstellungenTab({ items, onImport, onExport, onAdd, onClearAll, onClea
                       const m = part.match(/(.+?)\((\d+)%\)/);
                       if (m) map[m[1].trim()] = parseInt(m[2], 10);
                     });
-                    return { ...p, seasons: map };
+                    // Führende Saison (höchster Anteil) automatisch ins Saison-Feld übernehmen
+                    const top = Object.entries(map).sort((a, b) => b[1] - a[1])[0];
+                    return { ...p, seasons: map, season: top ? top[0] : p.season };
                   })}
                   placeholder="Jahreszeiten (durch Komma getrennt, z.B. Sommer (40%), Herbst (30%))" className="ta" style={{ ...S.ta, minHeight: 40, fontSize: 12 }} />
               </div>

@@ -59,6 +59,9 @@ export default function EvolveCard({ perfume, onClose }) {
       try { return JSON.parse(localStorage.getItem('parfum_haptic') || '{}'); } catch { return {}; }
     })();
     const intensity = Math.max(0, Math.min(1, hapticPref.intensity ?? 1)); // 0..1
+    // iOS-Erkennung (iPad meldet sich teils als Mac -> Touch-Support prüfen)
+    const isIOS = () => /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
     const useAudio = hapticPref.preferAudio ?? isIOS(); // Default: Audio auf iOS
     
     // Start-Puls: Vibration ODER Audio-Klick

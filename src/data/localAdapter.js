@@ -6,6 +6,8 @@
  * Exportiert sanitizePerfume und ONBOARD_STYLES für die Nutzung in App.js.
  */
 
+import { normalizeFamilyKey } from "../picker/familyMapping";
+
 const KEYS = {
   items: "parfum_collection_v2",
   log: "parfum_log_v2",
@@ -125,19 +127,26 @@ function safeUrl(v, max = 2048) {
   } catch { return ""; }
 }
 
+// Kanonische App-Familie für einen Rohbegriff ("Frisch", "Holzig", "Zitrus" …):
+// über Synonym-Mapping normalisieren und case-insensitiv auf FAMILIES mappen.
+const FAMILY_BY_KEY = Object.fromEntries(FAMILIES.map(f => [normalizeFamilyKey(f), f]));
+
 function sanitizePerfume(item) {
   const src = item && typeof item === "object" ? item : {};
   const cleanStr = (v, max = 300) => String(v === null || v === undefined ? "" : v).trim().slice(0, max);
+  const canonFamily = raw => FAMILY_BY_KEY[normalizeFamilyKey(raw)] || null;
   const famRaw = cleanStr(src.family, 80);
   const seasonRaw = cleanStr(src.season, 80);
-  const fam = FAMILIES.includes(famRaw) ? famRaw : "Sonstiges";
+  // Familien-Fallback: auch Parfumo-Rohbegriffe auf kanonische Familien mappen,
+  // bevor "Sonstiges" greift (gescrapte Accorde sonst immer "Sonstiges").
+  const fam = canonFamily(famRaw) || (FAMILIES.includes(famRaw) ? famRaw : "Sonstiges");
   const season = SEASONS.some(s => seasonRaw.includes(s)) ? seasonRaw : "Ganzjährig";
   const ratingNum = Number.parseInt(src.rating, 10);
 
   // Handle families array - keep first family as family for compatibility, store all in families
   let families = [];
   if (Array.isArray(src.families)) {
-    families = src.families.filter(f => FAMILIES.includes(f));
+    families = src.families.map(canonFamily).filter(Boolean);
   }
   if (families.length === 0 && fam && fam !== "Sonstiges") {
     families = [fam];

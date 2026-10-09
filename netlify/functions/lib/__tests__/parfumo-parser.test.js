@@ -5,7 +5,7 @@
  * das die von Parfumo erwarteten Klassen/Attribute nachbildet.
  */
 import { describe, it, expect } from "vitest";
-import { parse } from "../parfumo-parser.mjs";
+import { parse, applyPieCharts, parseChartTokens } from "../parfumo-parser.mjs";
 
 const URL = "https://www.parfumo.de/Parfums/Creed/Aventus";
 
@@ -164,4 +164,45 @@ describe("parfumo-parser – Robustheit", () => {
     expect(d.other_charts).toEqual([{ Damen: 50, Herren: 50 }]);
   });
 });
+});
+
+describe("parfumo-parser – Chart-AJAX-Helfer", () => {
+  it("applyPieCharts liest Saison-Pies aus einem AJAX-Fragment", () => {
+    const data = { url: URL };
+    const frag = `<div id="classification_community">
+      <svg class="pchart pchart-pie" aria-label="Frühling 32%, Sommer 31%, Herbst 24%, Winter 14%"></svg>
+      <svg class="pchart pchart-pie" aria-label="Herren 94%, Damen 6%"></svg>
+    </div>`;
+    const out = applyPieCharts(data, frag);
+    expect(out.seasons).toEqual({ Frühling: 32, Sommer: 31, Herbst: 24, Winter: 14 });
+    expect(out.other_charts).toEqual([{ Herren: 94, Damen: 6 }]);
+  });
+
+  it("applyPieCharts ignoriert Nicht-pchart-pie-SVGs (z.B. Platzhalter)", () => {
+    const data = { url: URL };
+    applyPieCharts(data, '<svg class="pchart pchart-placeholder" viewBox="0 0 360 200"></svg>');
+    expect(data.seasons).toBeUndefined();
+    expect(data.other_charts).toBeUndefined();
+  });
+
+  it("applyPieCharts übersteht leere/kaputte Eingaben", () => {
+    const data = { url: URL };
+    expect(() => applyPieCharts(data, "")).not.toThrow();
+    expect(() => applyPieCharts(data, null)).not.toThrow();
+    expect(data.seasons).toBeUndefined();
+  });
+
+  it("parseChartTokens liest p, h und csrf_key aus dem Inline-Script", () => {
+    const html = `$.post("https://www.parfumo.de/action/perfume/get_classification_chart.php",\n{type:type,p:9438,h:'4da3fff3e69d71d261a6a1960cb97d25',csrf_key:'y0ivut9bqz24of7j'})`;
+    expect(parseChartTokens(html)).toEqual({
+      p: "9438",
+      h: "4da3fff3e69d71d261a6a1960cb97d25",
+      csrf_key: "y0ivut9bqz24of7j",
+    });
+  });
+
+  it("parseChartTokens liefert null ohne Tokens", () => {
+    expect(parseChartTokens("<html><body>kein Script</body></html>")).toBeNull();
+    expect(parseChartTokens("")).toBeNull();
+  });
 });

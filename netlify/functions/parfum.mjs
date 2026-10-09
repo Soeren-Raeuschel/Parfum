@@ -1,5 +1,5 @@
 // Netlify Function (v2): GET /api/parfum/:brand/:name  ->  JSON mit Noten, Accorden, Jahreszeiten, ...
-import { parse } from "./lib/parfumo-parser.mjs";
+import { parse, parseChartTokens, applyPieCharts } from "./lib/parfumo-parser.mjs";
 import { isValidSlugParam, getClientIp, createRateLimiter } from "./lib/request-guard.mjs";
 
 const BASE = "https://www.parfumo.de/Parfums";
@@ -52,7 +52,39 @@ export default async (req, context) => {
   if (upstream.status === 404) return json({ error: "Duft nicht gefunden" }, 404);
   if (!upstream.ok) return json({ error: `Parfumo antwortete mit ${upstream.status}` }, 502);
 
-  const data = parse(await upstream.text(), url);
+  const html = await upstream.text();
+  const data = parse(html, url);
+
+  // Die Saison-/Kuchendiagramme liefert Parfumo NICHT im Seiten-HTML, sondern
+  // per AJAX nach (get_classification_chart.php). Dafür werden p/h/csrf_key aus
+  // dem Inline-Script der Seite und die Session-Cookies der Seitenantwort
+  // benötigt – ohne beides antwortet der Endpunkt leer. Ein Fehlschlag ist
+  // unkritisch: data.seasons bleibt dann ungesetzt (season -> "Ganzjährig").
+  try {
+    const tokens = parseChartTokens(html);
+    if (tokens) {
+      const setCookies = typeof upstream.headers.getSetCookie === "function"
+        ? upstream.headers.getSetCookie()
+        : [];
+      const cookie = setCookies.map((c) => c.split(";")[0]).join("; ");
+      const chartRes = await fetch(new URL("/action/perfume/get_classification_chart.php", url), {
+        method: "POST",
+        headers: {
+          ...HEADERS,
+          "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+          "X-Requested-With": "XMLHttpRequest",
+          Referer: url,
+          ...(cookie ? { Cookie: cookie } : {}),
+        },
+        body: new URLSearchParams({ type: "pie", p: tokens.p, h: tokens.h, csrf_key: tokens.csrf_key }),
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (chartRes.ok) applyPieCharts(data, await chartRes.text());
+    }
+  } catch {
+    // Ohne Chart-Daten bleibt data.seasons ungesetzt -> season fällt auf "Ganzjährig"
+  }
+
   return json(data, 200, {
     "Cache-Control": "public, max-age=3600",
     // Netlify-CDN speichert die Antwort 30 Tage -> derselbe Duft wird nur einmal abgerufen

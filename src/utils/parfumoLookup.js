@@ -8,6 +8,8 @@
 import { groqFetch, LOOKUP_PAGE_MAX_CHARS } from "./groqClient";
 import { InvalidResponseError } from "./errorHandler";
 import { FAMILY_CONTEXT } from "../picker/legacyScoring";
+import { normalizeFamilyKey } from "../picker/familyMapping";
+import { stripDiacritics } from "../picker/criteriaMapping";
 
 function buildTextFromJina(text) {
   // Jina rendert Parfumo-Noten als: ![Image N: NoteName](url)NoteName
@@ -107,6 +109,21 @@ class NotFoundError extends Error {
   }
 }
 
+// Leitet aus Parfumo-Accorden (Rohbegriffe wie "Frisch", "Holzig", "Zitrus")
+// eine Saison her: Synonym-Mapping auf App-Familien, dann FAMILY_CONTEXT der
+// ersten Familie mit bekanntem Kontext. Liefert null, wenn nichts herleitbar ist.
+function seasonFromAccords(accords) {
+  for (const a of Array.isArray(accords) ? accords : []) {
+    const key = normalizeFamilyKey(a?.name || "");
+    if (!key) continue;
+    const ctxKey = Object.keys(FAMILY_CONTEXT)
+      .find(k => stripDiacritics(k.toLowerCase()) === key);
+    const seasons = ctxKey ? FAMILY_CONTEXT[ctxKey].seasons : null;
+    if (seasons && seasons.length) return seasons[0];
+  }
+  return null;
+}
+
 function normalizeLookupPayload(obj) {
   if (!obj || typeof obj !== "object") throw new Error("Ungültige API-Antwort");
   const pick = (k, max) => {
@@ -158,17 +175,20 @@ function normalisiere(obj) {
     const notes = obj.notes || {};
     const joinNames = (list) => (list || []).map(n => n.name).filter(Boolean).join(", ");
 
+    // Accords nach Gewicht sortiert als Namen-Liste
+    const accords = (obj.accords || []);
+
     // Seasons: die Saison mit dem höchsten Wert (Gewichtung aus der Parfumo-Statistik),
-    // sonst Ganzjährig. Keys werden getrimmt, falls der Parser Whitespaces liefert.
+    // sonst aus der Hauptfamilie abgeleitet (Parfumo-Accorde wie "Frisch"/"Holzig"
+    // sind Rohbegriffe -> über Synonyme auf App-Familien mappen), sonst Ganzjährig.
+    // Keys werden getrimmt, falls der Parser Whitespaces liefert.
     let season = "Ganzjährig";
     const seasonEntries = Object.entries(obj.seasons || {})
       .map(([k, v]) => [String(k).trim(), Number(v) || 0])
       .filter(([k, v]) => k && v > 0)
       .sort((a, b) => b[1] - a[1]);
     if (seasonEntries.length > 0) season = seasonEntries[0][0];
-
-    // Accords nach Gewicht sortiert als Namen-Liste
-    const accords = (obj.accords || []);
+    else season = seasonFromAccords(accords) || season;
 
     return {
       name: obj.name || "",

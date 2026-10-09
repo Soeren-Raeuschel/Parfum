@@ -90,17 +90,40 @@ function parseDescription($) {
   return out;
 }
 
+// Wendet Kuchendiagramme aus einem HTML-Fragment (Duftseite oder AJAX-Chart)
+// auf das Datenobjekt an: Labels ausschließlich Jahreszeiten -> data.seasons,
+// alles andere -> data.other_charts.
+export function applyPieCharts(data, html) {
+  for (const tag of String(html ?? "").match(/<svg\b[^>]*>/g) ?? []) {
+    const cls = /class="([^"]*)"/.exec(tag)?.[1] ?? "";
+    if (!cls.split(/\s+/).includes("pchart-pie")) continue;
+    const pie = parsePie(/aria-label="([^"]*)"/.exec(tag)?.[1] ?? "");
+    const labels = Object.keys(pie);
+    if (!labels.length) continue;
+    if (labels.every((l) => SEASONS.has(l))) data.seasons = pie;
+    else (data.other_charts ??= []).push(pie);
+  }
+  return data;
+}
+
+// Liest p, h und csrf_key für den Chart-AJAX-Endpunkt aus dem Inline-Script der
+// Duftseite. Ohne diese Parameter (plus Session-Cookie) liefert der Endpunkt
+// keine Daten -> die Saison-Diagramme fehlen komplett.
+export function parseChartTokens(html) {
+  const s = String(html ?? "");
+  const i = s.indexOf("get_classification_chart.php");
+  if (i === -1) return null;
+  const win = s.slice(i, i + 600);
+  const p = /p\s*:\s*(\d+)/.exec(win)?.[1];
+  const h = /h\s*:\s*['"]([^'"]+)['"]/.exec(win)?.[1];
+  const csrf = /csrf_key\s*:\s*['"]([^'"]+)['"]/.exec(win)?.[1];
+  return p && h && csrf ? { p, h, csrf_key: csrf } : null;
+}
+
 export function parse(html, url) {
   const $ = cheerio.load(html);
   const data = { url, ...parseDescription($) };
   data.notes = parseNotes($);
   data.accords = parseAccords($);
-
-  $("svg.pchart-pie").each((_, svg) => {
-    const pie = parsePie($(svg).attr("aria-label"));
-    const labels = Object.keys(pie);
-    if (labels.length && labels.every((l) => SEASONS.has(l))) data.seasons = pie;
-    else (data.other_charts ??= []).push(pie);
-  });
-  return data;
+  return applyPieCharts(data, html);
 }
