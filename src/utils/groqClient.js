@@ -1,24 +1,18 @@
 /**
  * groqClient.js – Groq-API-Client (aus App.jsx ausgelagert):
- * getGroqKey, JSON-Schema-Validierung, GTM-Model-Pool mit 429-Cooldown,
+ * JSON-Schema-Validierung, GTM-Model-Pool mit 429-Cooldown,
  * Offline-Cache und der Countdown-Hook useGroqCountdown.
+ * Aufrufe laufen über den serverseitigen Proxy /api/groq (siehe
+ * netlify/functions/groq.mjs) – im Browser liegt kein API-Key.
  * GTM_MODEL_POOL, _gtmState und useGroqCountdown sind inline exportiert.
  */
 
 import { useState, useEffect } from "react";
-import { recordError, ApiError } from "./errorHandler";
-import { KEYS } from "../shared/constants";
+import { recordError } from "./errorHandler";
 
-function getGroqKey() {
-  try {
-    const stored = typeof localStorage !== "undefined" && localStorage.getItem(KEYS.groqKey);
-    if (typeof stored === "string" && stored.trim().length >= 10) return stored.trim();
-  } catch { }
-  const w = typeof window !== "undefined" ? window : {};
-  const k = w.__SILLAGE_GROQ_KEY__ || w.__SILLAGE_AI_KEY__;
-  return typeof k === "string" && k.length >= 10 ? k.trim() : null;
-}
-const GROQ_CHAT_URL = "https://api.groq.com/openai/v1/chat/completions";
+// Server-Proxy (Netlify Function) statt direktem Groq-Call:
+// der Key liegt nur serverseitig in GROQ_API_KEY.
+const GROQ_CHAT_URL = "/api/groq";
 const LOOKUP_PAGE_MAX_CHARS = 6000; // Reduziert von 10000 → weniger Input-Tokens
 
 
@@ -145,9 +139,6 @@ function _gtmParseHeaders(headers, modelId) {
 }
 
 async function groqFetch({ messages, temperature = 0.4, max_tokens = 200, cacheKey = null, forceFallback = false }) {
-  const apiKey = getGroqKey();
-  if (!apiKey) { console.log('ERROR', 'Groq API key missing'); throw new ApiError('Kein Groq API-Key – bitte unter Settings → API eintragen.'); }
-
   const now = Date.now();
   const retryWaitSec = Math.ceil((_groqRetryAfterUntil - now) / 1000);
 
@@ -165,7 +156,7 @@ async function groqFetch({ messages, temperature = 0.4, max_tokens = 200, cacheK
       try {
         res = await fetch(GROQ_CHAT_URL, {
           method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: "Bearer " + apiKey },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ model: modelDef.id, temperature, max_completion_tokens: max_tokens, messages }),
           signal: abortCtrl.signal,
         });
@@ -255,7 +246,7 @@ export function useGroqCountdown() {
 // Erweiterbar: neue Felder einfach im params-Objekt ergänzen.
 
 export {
-  groqFetch, getGroqKey, JSON_SCHEMAS, validateJsonSchema, getSchemaExample,
+  groqFetch, JSON_SCHEMAS, validateJsonSchema, getSchemaExample,
   LOOKUP_PAGE_MAX_CHARS, GROQ_CHAT_URL, GTM_COOLDOWN_MS,
   groqSetOfflineCache, groqGetOfflineCache,
 };

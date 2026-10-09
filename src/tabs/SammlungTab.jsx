@@ -11,7 +11,7 @@ import { List as FixedSizeListVirtual, useDynamicRowHeight } from "react-window"
 import { S, FamilyPill, Stars, useBodyLock } from "../shared/ui";
 import { CONC_COLORS, FAMILIES, FAM_COLORS, NOTE_CAT_COLORS, SEASONS, primaryFamily } from "../shared/constants";
 import { splitNotes } from "../utils/helpers";
-import { groqFetch, getGroqKey } from "../utils/groqClient";
+import { groqFetch } from "../utils/groqClient";
 import { lookupByUrl } from "../utils/parfumoLookup";
 import { buildExportCsv, buildExportPayload, exportReplacer, shareOrDownloadFile } from "../utils/collectionIO";
 import { getAllNotes, matchPerfume, normalizeTerm } from "../utils/perfumeSearch";
@@ -290,7 +290,6 @@ async function fetchBrandInfo(brand) {
   if (!brand || brand.trim().length < 2) return null;
   const key = brand.trim().toLowerCase();
   if (_wikiCache[key] !== undefined) return _wikiCache[key];
-  if (!getGroqKey()) return null; // kein Key → sofort null, kein Cache-Eintrag
   try {
     const { text } = await groqFetch({
       messages: [
@@ -335,10 +334,6 @@ function BrandInfo({ house }) {
     if (expanded && info) { setExpanded(false); return; }
     setExpanded(true);
     if (info || !house) return;
-    if (!getGroqKey()) {
-      setErrMsg("Kein Groq API-Key – bitte unter Settings → API eintragen.");
-      return;
-    }
     setLoading(true); setErrMsg("");
     try {
       const result = await fetchBrandInfo(house);
@@ -428,7 +423,6 @@ async function fetchFunFacts(name, house, top, middle, base, extra = {}) {
   const noteHash = noteStr.slice(0, 40).replace(/\s/g, "");
   const key = `${house || ""}::${name}::${noteHash}`.toLowerCase();
   if (_factsCache[key] !== undefined) return _factsCache[key];
-  if (!getGroqKey()) return null;
 
   // Zusatzinfos für präziseren Prompt
   const { conc, family, season, gender } = extra;
@@ -495,10 +489,6 @@ function FunFactsCard({ name, house, top, middle, base, conc, family, season, ge
     if (expanded && facts) { setExpanded(false); return; }
     setExpanded(true);
     if (facts) return;
-    if (!getGroqKey()) {
-      setErrMsg("Kein Groq API-Key – bitte unter Settings → API eintragen.");
-      return;
-    }
     setLoading(true); setErrMsg("");
     try {
       const result = await fetchFunFacts(name, house, top, middle, base, extra);

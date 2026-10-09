@@ -1,120 +1,82 @@
-### Test 1: Normaler API-Aufruf (Server online)
-GET http://localhost:5174/api/data
+### ── Echte API-Endpunkte (Netlify Functions) ──────────────────────────────
+### Lokal mit `netlify dev` testen (liefert die Functions unter :8888 aus).
+### Prod-Deploy: Base-URL der Netlify-Site statt http://localhost:8888.
+
+### GET /api/parfum/:brand/:name – Parfumo-Daten lookup
+### Gültige Zeichen für brand/name: alles außer / \ ? & # % und Steuerzeichen
+GET http://localhost:8888/api/parfum/Creed/Aventus
 Accept: application/json
+# Erwartet: 200 + JSON (notes, accords, seasons, description) und Cache-Header
+
+### GET /api/parfum – Pfad-Manipulation (Traversal) wird blockiert
+GET http://localhost:8888/api/parfum/../../evil/evil
+# Erwartet: 400 "Ungültige Zeichen in Marke oder Name"
+
+### GET /api/parfum/%2e%2e – %-Escapes werden blockiert (Zeichen-Whitelist)
+GET http://localhost:8888/api/parfum/A%2FB/X
+# Erwartet: 400
+
+### POST /api/groq – KI-Proxy (Key liegt serverseitig in GROQ_API_KEY)
+POST http://localhost:8888/api/groq
+Content-Type: application/json
+
+{
+  "model": "openai/gpt-oss-120b",
+  "messages": [
+    { "role": "system", "content": "Antworte nur mit JSON." },
+    { "role": "user", "content": "Beschreibe Aventus von Creed." }
+  ],
+  "temperature": 0.3,
+  "max_tokens": 150
+}
+# Erwartet: 200 + Groq-Chat-Completion-JSON; Rate-Limit-Header werden durchgereicht
+
+### POST /api/groq – falsches Modell (nicht in der Whitelist)
+POST http://localhost:8888/api/groq
+Content-Type: application/json
+
+{ "model": "llama-3.3-70b", "messages": [{ "role": "user", "content": "hi" }] }
+# Erwartet: 400 "Unbekanntes Modell"
+
+### POST /api/groq – ungültige messages (fehlender role/content)
+POST http://localhost:8888/api/groq
+Content-Type: application/json
+
+{ "model": "openai/gpt-oss-120b", "messages": [{ "foo": "bar" }] }
+# Erwartet: 400
+
+### POST /api/groq – kaputtes JSON
+POST http://localhost:8888/api/groq
+Content-Type: application/json
+
+{invalid
+# Erwartet: 400 "Ungültiges JSON"
+
+### POST /api/groq – GET ist nicht erlaubt
+GET http://localhost:8888/api/groq
+# Erwartet: 405 "Nur POST erlaubt"
+
+### POST /api/groq – Rate-Limit (12/min pro IP, Retry-After-Header)
+# 12x hintereinander POST /api/groq senden → der 13. Request antwortet:
+# Erwartet: 429 mit "Retry-After" → Client startet Countdown-Timer
+
+### ── Legacy-Szenarien (Endpunkte existieren nicht mehr – dokumentiert als Referenz) ──
 
 ### Test 2: Simulation Fehlerhafter Payload (XSS / Injection Test)
-POST http://localhost:5174/api/data
+POST http://localhost:8888/api/groq
 Content-Type: application/json
 
 {
     "username": "<script>alert('xss')</script>",
-    "input": "' OR '1'='1"
+    "input": "' OR '1'='1",
+    "model": "openai/gpt-oss-120b",
+    "messages": [{ "role": "user", "content": "test" }]
 }
+# Erwartet: 400 – unbekannte Felder werden verworfen, nur model/messages/temperature/max_tokens werden an Groq weitergegeben
 
-### Test 3: Netzwerkfehler (Offline-Simulation)
-GET http://localhost:5174/api/weather
-Accept: application/json
-# Erwartet: Netzwerkfehler → Graceful Degradation (Fallback auf localStorage)
-
-### Test 4: Rate Limiting (429 Status)
-GET http://localhost:5174/api/groq
-Accept: application/json
-# Erwartet: 429 → Countdown-Timer, Zwischengespeicherte Antworten
-
-### Test 5: CORS-Fehler (Ungültiger Origin)
-GET http://localhost:3000/api/data
-Origin: http://evil-site.com
-Accept: application/json
-# Erwartet: CORS-Block → Fallback auf Client-Validierung
-
-### Test 6: Timeout-Szenario
-GET http://localhost:3000/api/slow-endpoint
-Accept: application/json
-# Erwartet: Timeout nach 8s → Fallback-Daten
-
-### Test 7: Ungültige Daten (Validierung)
-POST http://localhost:3000/api/perfume
+### Test: Timeout-Szenario (Groq hängt)
+POST http://localhost:8888/api/groq
 Content-Type: application/json
 
-{
-    "name": "",
-    "family": "InvalidFamily",
-    "notes": null
-}
-# Erwartet: Validierungsfehler → Keine Speicherung, Fehlerhinweis
-
-### Test 8: Graceful Degradation (Fallback auf localStorage)
-GET http://localhost:3000/api/collection
-Accept: application/json
-# Erwartet: Bei Server-Fehler → localStorage-Daten als Fallback
-
-### Test 9: Ungültiger JSON-Payload
-POST http://localhost:3000/api/data
-Content-Type: application/json
-
-{invalid json syntax}
-# Erwartet: Parse-Error → Fehlerbehandlung ohne Absturz
-
-### Test 10: Leere Sammlung (Initial State)
-GET http://localhost:3000/api/items
-Accept: application/json
-# Erwartet: Leere Liste → UI zeigt Empty-State
-
-### Test 11: Groq API Limit (429)
-POST http://localhost:3000/api/groq
-Content-Type: application/json
-
-{"prompt": "test"}
-# Erwartet: 429 → Countdown, Wiederholung nach Timeout
-
-### Test 12: CORS Preflight (OPTIONS)
-OPTIONS http://localhost:3000/api/data
-Origin: http://localhost:5173
-Access-Control-Request-Method: POST
-Access-Control-Request-Headers: Content-Type
-# Erwartet: 204 No Content → CORS erlaubt
-
-### Test 13: Ungültiger Content-Type
-POST http://localhost:3000/api/data
-Content-Type: text/plain
-
-plain text data
-# Erwartet: 415 Unsupported Media Type → Fehlerbehandlung
-
-### Test 14: Server nicht erreichbar (DNS-Fehler)
-GET http://localhost:9999/api/data
-Accept: application/json
-# Erwartet: DNS-Fehler → Graceful Degradation, UI-Hinweis
-
-### Test 15: Große Payload (Payload Too Large)
-POST http://localhost:3000/api/perfume
-Content-Type: application/json
-
-{"data": "x".repeat(100000)}
-# Erwartet: 413 Payload Too Large → Fehlerhinweis
-
-### Test 16: Session-Ablauf (401 Unauthorized)
-GET http://localhost:3000/api/protected
-Accept: application/json
-# Erwartet: 401 → Redirect zu Login, Session-Reset
-
-### Test 17: Fallback auf localStorage (Network Error)
-GET http://localhost:3000/api/sync
-Accept: application/json
-# Erwartet: Network Error → Automatischer Fallback auf localStorage-Daten
-
-### Test 18: Rate Limit Headers (Retry-After)
-GET http://localhost:3000/api/rate-limited
-Accept: application/json
-# Erwartet: 429 mit Retry-After-Header → Countdown-Timer initialisieren
-
-### Test 19: CORS-Block (Ungültige Origin)
-GET http://localhost:3000/api/data
-Origin: http://malicious.example.com
-Accept: application/json
-# Erwartet: CORS-Block → Error-Toast, Fallback auf Client-Daten
-
-### Test 20: Ungültige Koordinaten (Geolocation)
-GET http://localhost:3000/api/weather?lat=999&lng=999
-Accept: application/json
-# Erwartet: Invalid Coordinates → Fehler, Fallback auf manuelle Eingabe
+{"model": "openai/gpt-oss-120b", "messages": [{"role": "user", "content": "test"}]}
+# Erwartet bei hängendem Groq: 502 nach 30s (AbortSignal.timeout)

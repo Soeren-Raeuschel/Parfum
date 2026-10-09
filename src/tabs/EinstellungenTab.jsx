@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Disclosure, Dialog } from "@headlessui/react";
 import { S } from "../shared/ui";
-import { KEYS, FAMILIES, FAM_COLORS, NOTE_CATEGORIES, NOTE_CAT_COLORS, validateParfumoLookupUrl, extrahiereBrandName } from "../shared/constants";
+import { FAMILIES, FAM_COLORS, NOTE_CATEGORIES, NOTE_CAT_COLORS, validateParfumoLookupUrl, extrahiereBrandName } from "../shared/constants";
 import EvolveCard from "../components/EvolveCard";
 import { FileUpload } from "../components/ui/file-upload";
 import { newId } from "../data/localAdapter";
@@ -105,11 +105,6 @@ function EinstellungenTab({ items, onImport, onExport, onAdd, onClearAll, onClea
   // Sync nameInput with appName prop (e.g. after external reset)
   const [nameInput, setNameInput] = useState(appName);
   useEffect(() => { setNameInput(appName); }, [appName]);
-
-  const [groqKeyDraft, setGroqKeyDraft] = useState(() => {
-    try { return localStorage.getItem(KEYS.groqKey) || ""; } catch { return ""; }
-  });
-  const [groqKeyMsg, setGroqKeyMsg] = useState("");
 
   function showMsg(text, type = "ok") {
     setMsg({ text, type });
@@ -253,35 +248,11 @@ function EinstellungenTab({ items, onImport, onExport, onAdd, onClearAll, onClea
       {/* ── API ─────────────────────────────────────────────── */}
       <SettingsSection title="API & Datenquellen" icon="⌗">
         <div style={{ fontSize: 11, color: "#888780", marginBottom: 10, lineHeight: 1.6 }}>
-          Kostenloser Groq-Key unter{" "}
-          <a href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer"
-            style={{ color: "#185FA5" }}>console.groq.com/keys</a>
-          {" "}– lokal gespeichert. Free-Tier: 30 Req/Min, 1.000/Tag.
-          Token Manager rotiert automatisch zwischen 3 Modellen.
+          KI-Funktionen laufen über einen serverseitigen Proxy –{" "}
+          <strong style={{ color: "#1A1A18" }}>kein API-Key nötig</strong>.
+          Limit: 12 Anfragen/Minute pro Gerät. Der Token Manager rotiert
+          automatisch zwischen 3 Modellen.
         </div>
-        <label htmlFor="groq-key" style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0,0,0,0)" }}>Groq API Key</label>
-        <input id="groq-key" type="password" autoComplete="off" spellCheck={false}
-          value={groqKeyDraft}
-          onChange={e => { setGroqKeyDraft(e.target.value); setGroqKeyMsg(""); }}
-          placeholder="gsk_…"
-          style={{ ...S.inp, marginBottom: 10, fontFamily: "ui-monospace,monospace", fontSize: 12 }} className="inp" />
-        <div style={{ display: "flex", gap: 8 }}>
-          <button type="button" onClick={() => {
-            const t = groqKeyDraft.trim();
-            // Validate format: Groq keys start with "gsk_" and are at least 30 chars
-            if (!t.startsWith("gsk_") || t.length < 30) {
-              setGroqKeyMsg('Ungültiger Schlüssel – Groq-Keys beginnen mit "gsk_".');
-              return;
-            }
-            try { localStorage.setItem(KEYS.groqKey, t); setGroqKeyMsg("✓ Gespeichert."); }
-            catch { setGroqKeyMsg("Speichern fehlgeschlagen."); }
-          }} style={{ ...S.btn("pri"), padding: "10px 16px" }} className="btn">Speichern</button>
-          <button type="button" onClick={() => {
-            try { localStorage.removeItem(KEYS.groqKey); } catch { }
-            setGroqKeyDraft(""); setGroqKeyMsg("Schlüssel entfernt.");
-          }} style={{ ...S.btn("out"), padding: "10px 16px" }} className="btn">Entfernen</button>
-        </div>
-        {groqKeyMsg && <div style={{ fontSize: 12, marginTop: 8, color: groqKeyMsg.includes("✓") ? "#1D9E75" : "#993C1D" }}>{groqKeyMsg}</div>}
         <GroqRateLimitStatus />
       </SettingsSection>
 
