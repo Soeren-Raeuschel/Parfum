@@ -8,7 +8,7 @@ const STARS = Array.from({ length: 12 }, (_, i) => {
   return {
     dx: Math.round(Math.cos(angle) * dist),
     dy: Math.round(Math.sin(angle) * dist),
-    delay: 650 + i * 40, // startet kurz bevor die Karte stehen bleibt
+    delay: 950 + i * 45, // startet, wenn der Flip kurz vorm Einrasten ist
     size: 12 + (i % 4) * 5,
   };
 });
@@ -46,18 +46,45 @@ export default function EvolveCard({ perfume, onClose }) {
   const [closing, setClosing] = useState(false);
 
   // Zentrale Timings (ms) – synchron zu den Animationen
-  const SPIN_MS = 1100;   // Dauer von cardSpinIn
+  const SPIN_MS = 1400;   // Dauer von cardSpinIn (muss zur CSS-Animation passen)
   const HOLD_MS = 2200;   // Pause, bevor ausgeblendet wird
   const FADE_MS = 400;    // Dauer des Fade-outs
 
   // Auto-Close: kurze Pause nach der Animation, dann sanft ausblenden
   useEffect(() => {
     if (!perfume) return;
-    // Haptisches Feedback (mobil; Browser ohne Vibration API ignorieren)
-    try { navigator.vibrate?.([25, 40, 15]); } catch { /* nicht unterstützt */ }
+        // Feedback: Vibration (Android) + Audio-Klick (iOS Safari)
+    // User-Präferenz via localStorage: { intensity: 0..1, preferAudio: true/false }
+    const hapticPref = (() => {
+      try { return JSON.parse(localStorage.getItem('parfum_haptic') || '{}'); } catch { return {}; }
+    })();
+    const intensity = Math.max(0, Math.min(1, hapticPref.intensity ?? 1)); // 0..1
+    const useAudio = hapticPref.preferAudio ?? isIOS(); // Default: Audio auf iOS
+    
+    // Start-Puls: Vibration ODER Audio-Klick
+    if (intensity > 0) {
+      if (useAudio) {
+        playClick(intensity);
+      } else {
+        const scale = (ms) => Math.round(ms * intensity);
+        try { navigator.vibrate?.([scale(25), scale(40), scale(15)]); } catch {}
+      }
+    }
     const t1 = setTimeout(() => setClosing(true), SPIN_MS + HOLD_MS);
     const t2 = setTimeout(onClose, SPIN_MS + HOLD_MS + FADE_MS);
-    return () => { clearTimeout(t1); clearTimeout(t2); };
+    
+    // Einrasten-Puls kurz vor Ende der Drehung
+    if (intensity > 0) {
+      const t3 = setTimeout(() => {
+        if (useAudio) {
+          playLock(intensity);
+        } else {
+          try { navigator.vibrate?.([15, 25, 15, 25, 60].map(ms => Math.round(ms * intensity))); } catch {}
+        }
+      }, SPIN_MS - 120);
+      return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
+    }
+    return () => { clearTimeout(t1); clearTimeout(t2); };;
   }, [perfume, onClose]);
 
   if (!perfume) return null;
@@ -69,6 +96,9 @@ export default function EvolveCard({ perfume, onClose }) {
   const top = splitNoteList(perfume.top);
   const middle = splitNoteList(perfume.middle);
   const base = splitNoteList(perfume.base);
+
+  // 3D-Flip nur auf geeigneten Geräten, sonst 2D-Fallback (Scale + Fade)
+  const animate3D = !prefersReducedMotion() && supports3DFlip();
 
   return (
     <div
@@ -97,19 +127,38 @@ export default function EvolveCard({ perfume, onClose }) {
           </span>
         ))}
 
+        {/* Schattenwurf-Ebene hinter der Karte – folgt dem Flip und macht
+            die Bewegung räumlicher. Nur beim 3D-Flip (Blur ist auf alten
+            Geräten teuer). */}
+        {animate3D && (
+          <span aria-hidden="true" style={{
+            position: "absolute", inset: 0, borderRadius: 18,
+            background: "rgba(26,26,24,.45)", filter: "blur(18px)",
+            pointerEvents: "none", zIndex: 0,
+            animation: `cardShadowIn 1.4s cubic-bezier(.35,.9,.25,1) both`,
+          }} />
+        )}
+
         {/* Karte */}
         <div
           role="status"
           aria-live="polite"
           style={{
+            position: "relative", zIndex: 1, // über der Schatten-Ebene
             width: 216, minHeight: 300, borderRadius: 18, padding: 18,
             background: "linear-gradient(155deg, #534AB7 0%, #7C6FE0 55%, #4A429E 100%)",
             color: "#FAFAF8", boxShadow: "0 20px 50px rgba(26,26,24,.45)",
-            transformStyle: "preserve-3d",
+            transformStyle: animate3D ? "preserve-3d" : undefined,
             fontFamily: "'Georgia', serif",
-            willChange: "transform, opacity", // GPU-Hint für flüssigen 3D-Spin
+            willChange: "transform, opacity", // GPU-Hint für flüssigen Spin
             overflow: "hidden", // damit der Licht-Sweep nicht über die Ecken läuft
-            animation: prefersReducedMotion() ? "scaleIn .2s ease-out both" : "cardSpinIn 1.1s cubic-bezier(.22,1,.36,1) both",
+            // Animation je nach Gerät: 3D-Flip, 2D-Fallback (schwache/alte
+            // Geräte) oder einfaches Scale-in bei prefers-reduced-motion
+            animation: prefersReducedMotion()
+              ? "scaleIn .2s ease-out both"
+              : animate3D
+                ? "cardSpinIn 1.4s cubic-bezier(.35,.9,.25,1) both"
+                : "cardSpinIn2D 1.4s cubic-bezier(.35,.9,.25,1) both",
           }}
         >
           {/* Licht-Sweep nach dem Landen (nur bei aktivierten Animationen) */}
@@ -168,4 +217,22 @@ function splitNoteList(v) {
 
 function prefersReducedMotion() {
   try { return window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch { return false; }
+}
+
+/**
+ * 3D-Flip nur auf Geräten, die das auch performant können:
+ * – CSS.supports-Check für perspective/preserve-3d (sehr alte Browser)
+ * – Hardware-Heuristik: CPU-Cores + deviceMemory (falls verfügbar)
+ *   ≤ 2 Cores ODER ≤ 2 GB RAM → schwaches/altes Gerät → 2D-Fallback.
+ */
+function supports3DFlip() {
+  try {
+    const cssOK = window.CSS?.supports?.("(perspective: 1px) and (transform-style: preserve-3d)");
+    const cores = navigator.hardwareConcurrency || 4;
+    const mem = navigator.deviceMemory;
+    const lowMem = typeof mem === 'number' && mem <= 2;
+    // Zusätzlich: alte iOS-Geräte (iPhone 8 und älter) erkennen
+    const oldIOS = isOldIOS();
+    return cssOK && cores > 2 && !lowMem && !oldIOS;
+  } catch { return false; }
 }

@@ -27,7 +27,6 @@ import {
   categorizeFamily,
   normalizeFamilyKey,
   perfumeFamilyList,
-  perfumeHasNotes,
 } from "./familyMapping";
 
 const clamp01 = x => Math.min(1, Math.max(0, x));

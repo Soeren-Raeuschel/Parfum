@@ -5,7 +5,9 @@ import { KEYS, FAMILIES, FAM_COLORS, NOTE_CATEGORIES, NOTE_CAT_COLORS, validateP
 import EvolveCard from "../components/EvolveCard";
 import { FileUpload } from "../components/ui/file-upload";
 import { newId } from "../data/localAdapter";
-import { useGroqCountdown, GTM_MODEL_POOL, _gtmState, parseImportFile, MAX_IMPORT_BYTES, ladeParfumdaten } from "../App.jsx";
+import { useGroqCountdown, GTM_MODEL_POOL, _gtmState } from "../utils/groqClient";
+import { parseImportFile, MAX_IMPORT_BYTES } from "../utils/collectionIO";
+import { ladeParfumdaten } from "../utils/parfumoLookup";
 
 function SettingsSection({ title, icon, children, defaultOpen = false }) {
   return (

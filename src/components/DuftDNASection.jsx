@@ -74,7 +74,7 @@ function computeDNA(items, log, weightByUsage = false) {
 // ─────────────────────────────────────────────────────────────────────────────
 let _chartModulePromise = null;
 function loadChart() {
-  if (!_chartModulePromise) _chartModulePromise = import("chart.js/auto");
+  if (!_chartModulePromise) _chartModulePromise = import("./chartSetup");
   return _chartModulePromise;
 }
 
