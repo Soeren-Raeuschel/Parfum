@@ -47,6 +47,9 @@ Desktop.ini
 # Lokale, nicht geteilte KI-Regeln
 .cursorrules
 
+# --- Memory MCP (projektlokales Gedächtnis) ---
+.memory/
+
 # --- Python ---
 __pycache__/
 *.py[cod]

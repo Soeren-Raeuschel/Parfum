@@ -177,10 +177,8 @@ async function groqFetch({ messages, temperature = 0.4, max_tokens = 200, cacheK
       if (!res.ok) {
         const e = await res.json().catch(() => ({}));
         const errMsg = e?.error?.message || `HTTP ${res.status}`;
-        if (res.status >= 500) {
-        } else if (res.status >= 400 && res.status < 500) {
-        } else {
-        }
+        // Fix: leeres if/else-if/else (toter Code) entfernt – das Logging unten
+        // deckt alle Statusklassen gleich ab.
         console.log('WARN', `HTTP ${res.status} on ${modelDef.id}`, { error: errMsg });
         continue;
       }

@@ -10,6 +10,7 @@ import { InvalidResponseError } from "./errorHandler";
 import { FAMILY_CONTEXT } from "../picker/legacyScoring";
 import { normalizeFamilyKey } from "../picker/familyMapping";
 import { stripDiacritics } from "../picker/criteriaMapping";
+import { validateParfumoLookupUrl } from "../shared/constants";
 
 function buildTextFromJina(text) {
   // Jina rendert Parfumo-Noten als: ![Image N: NoteName](url)NoteName

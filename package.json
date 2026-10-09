@@ -5,7 +5,7 @@
   "description": "Perfume collection management application",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "eslint . && vite build",
     "analyze": "ANALYZE=true vite build",
     "preview": "vite preview",
     "lint": "eslint .",
