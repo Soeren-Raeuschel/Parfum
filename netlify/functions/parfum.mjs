@@ -1,5 +1,6 @@
 // Netlify Function (v2): GET /api/parfum/:brand/:name  ->  JSON mit Noten, Accorden, Jahreszeiten, ...
 import { parse } from "./lib/parfumo-parser.mjs";
+import { isValidSlugParam, getClientIp, createRateLimiter } from "./lib/request-guard.mjs";
 
 const BASE = "https://www.parfumo.de/Parfums";
 const HEADERS = {
@@ -9,6 +10,12 @@ const HEADERS = {
   "Accept-Language": "de-DE,de;q=0.9,en;q=0.5",
 };
 
+// Rate-Limit: 30 Requests pro Minute pro IP. Schutz für Parfumo (und unsere
+// eigene IP bei Netlify) – Antworten sind zusätzlich 30 Tage im CDN gecacht.
+// In-memory-Limiter gilt pro Function-Instanz; für harte Limits zusätzlich
+// "Rate Limit Rules" im Netlify-Dashboard setzen.
+const rateLimiter = createRateLimiter({ max: 30, windowMs: 60_000 });
+
 const slug = (t) => encodeURIComponent(t.trim().replace(/\s+/g, "_"));
 const json = (body, status = 200, extra = {}) =>
   new Response(JSON.stringify(body), {
@@ -17,10 +24,22 @@ const json = (body, status = 200, extra = {}) =>
   });
 
 export default async (req, context) => {
+  // Rate-Limit vor jeder weiteren Verarbeitung (auch vor teuren 400ern)
+  const rl = rateLimiter.check(getClientIp(req));
+  if (!rl.allowed) {
+    return json({ error: "Zu viele Anfragen – bitte kurz warten." }, 429, {
+      "Retry-After": String(rl.retryAfterSec),
+    });
+  }
+
   const brand = decodeURIComponent(context.params.brand ?? "").trim();
   const name = decodeURIComponent(context.params.name ?? "").trim();
-  if (!brand || !name || brand.length > 80 || name.length > 80) {
+  if (!brand || !name) {
     return json({ error: "Marke und Name angeben (max. 80 Zeichen)" }, 400);
+  }
+  // Zeichnen-Whitelist: verhindert Pfad-/URL-Manipulation zusätzlich zum encodeURIComponent
+  if (!isValidSlugParam(brand) || !isValidSlugParam(name)) {
+    return json({ error: "Ungültige Zeichen in Marke oder Name" }, 400);
   }
 
   const url = `${BASE}/${slug(brand)}/${slug(name)}`;

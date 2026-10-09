@@ -114,6 +114,17 @@ function hydratePrefs(raw) {
 
 // --- sanitizePerfume (from App.js) ---
 // eslint-disable-next-line no-unused-vars -- exported for App.js
+// Nur absolute http(s)-URLs durchlassen – importierte/gespeicherte Werte könnten
+// sonst javascript:-URIs enthalten, die als <a href> gerendert werden (XSS).
+function safeUrl(v, max = 2048) {
+  const s = String(v === null || v === undefined ? "" : v).trim().slice(0, max);
+  if (!s) return "";
+  try {
+    const u = new URL(s);
+    return u.protocol === "http:" || u.protocol === "https:" ? s : "";
+  } catch { return ""; }
+}
+
 function sanitizePerfume(item) {
   const src = item && typeof item === "object" ? item : {};
   const cleanStr = (v, max = 300) => String(v === null || v === undefined ? "" : v).trim().slice(0, max);
@@ -145,8 +156,8 @@ function sanitizePerfume(item) {
     season,
     gender: cleanStr(src.gender, 40) || "Unisex",
     format: cleanStr(src.format, 20),
-    url: cleanStr(src.url, 2048),
-    spotify_url: cleanStr(src.spotify_url, 2048),
+    url: safeUrl(src.url),
+    spotify_url: safeUrl(src.spotify_url),
     rating: Number.isFinite(ratingNum) ? Math.min(5, Math.max(0, ratingNum)) : 0,
     note_categories: Array.isArray(src.note_categories) ? src.note_categories.filter(c => NOTE_CATEGORIES.includes(c)).slice(0, 3) : [],
     addedAt: typeof src.addedAt === "number" ? src.addedAt : (src.addedAt ? new Date(src.addedAt).getTime() : Date.now()),

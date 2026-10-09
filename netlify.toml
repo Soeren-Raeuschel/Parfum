@@ -5,3 +5,17 @@
 
 [functions]
 directory = "netlify/functions"
+
+# Security-Header für alle ausgelieferten Dateien.
+# CSP: Die App lädt Scripte/Styles/Fonts nur von sich selbst (Vite-Bundle,
+# @fontsource), React setzt Inline-Styles ('unsafe-inline' für style-src nötig).
+# Externe Fetch-Ziele laut Code: api.groq.com (KI-Client) und r.jina.ai
+# (Parfumo-Fallback-Lookup). Eigene API läuft unter 'self' (/api/parfum).
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=()"
+    Content-Security-Policy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' https://api.groq.com https://r.jina.ai; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"

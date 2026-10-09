@@ -83,6 +83,17 @@ describe("sanitizePerfume", () => {
     const p = sanitizePerfume({ ...basePerfume, note_categories: ["Süß", "Quatsch", "Grün", "Würzig", "Erdig"] });
     expect(p.note_categories).toEqual(["Süß", "Grün", "Würzig"]);
   });
+
+  it("erlaubt nur http(s)-URLs bei url/spotify_url (XSS-Schutz)", () => {
+    expect(sanitizePerfume({ ...basePerfume, url: "https://www.parfumo.de/x" }).url).toBe("https://www.parfumo.de/x");
+    expect(sanitizePerfume({ ...basePerfume, url: "http://parfumo.de/y" }).url).toBe("http://parfumo.de/y");
+    expect(sanitizePerfume({ ...basePerfume, url: "javascript:alert(1)" }).url).toBe("");
+    expect(sanitizePerfume({ ...basePerfume, url: "data:text/html,hi" }).url).toBe("");
+    expect(sanitizePerfume({ ...basePerfume, url: "vbscript:x" }).url).toBe("");
+    expect(sanitizePerfume({ ...basePerfume, url: "keine url" }).url).toBe("");
+    expect(sanitizePerfume({ ...basePerfume, spotify_url: "javascript:alert(1)" }).spotify_url).toBe("");
+    expect(sanitizePerfume({ ...basePerfume, spotify_url: "https://open.spotify.com/track/1" }).spotify_url).toBe("https://open.spotify.com/track/1");
+  });
 });
 
 describe("newId", () => {

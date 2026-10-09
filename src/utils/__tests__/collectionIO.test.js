@@ -5,7 +5,7 @@
  */
 import { describe, it, expect } from "vitest";
 import {
-  parseImportFile, parseTSV, parseCSV, parseJSON, splitCsvLine,
+  parseImportFile, splitCsvLine,
   mapHeaderToFields, mapRowToPerfume, sanitizeField,
   buildExportPayload, buildExportCsv, exportReplacer,
   MAX_IMPORT_BYTES,
@@ -93,6 +93,13 @@ describe("collectionIO – JSON-Import", () => {
   it("gibt bei kaputtem JSON ein leeres Array zurück", () => {
     expect(parseImportFile("{kaputt", "x.json")).toEqual([]);
     expect(parseImportFile("[]", "x.json")).toEqual([]);
+  });
+
+  it("entfernt javascript:-URLs bereits beim Import (XSS-Schutz)", () => {
+    const payload = JSON.stringify([{ name: "A", url: "javascript:alert(1)" }]);
+    const items = parseImportFile(payload, "bösartig.json");
+    expect(items).toHaveLength(1);
+    expect(items[0].url).toBe("");
   });
 
 describe("collectionIO – Header-Zuordnung und Sanitizing", () => {
