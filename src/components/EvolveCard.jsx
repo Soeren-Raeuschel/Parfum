@@ -87,7 +87,7 @@ export default function EvolveCard({ perfume, onClose }) {
       }, SPIN_MS - 120);
       return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
     }
-    return () => { clearTimeout(t1); clearTimeout(t2); };;
+    return () => { clearTimeout(t1); clearTimeout(t2); };
   }, [perfume, onClose]);
 
   if (!perfume) return null;
@@ -102,10 +102,9 @@ export default function EvolveCard({ perfume, onClose }) {
 
   // 3D-Flip auch auf Safari: performant gemacht durch
   // – Blur in separater, statischer Ebene (keine animierten Kinder mehr,
-  //   das war der Compositing-Konflikt -> Ruckeln, siehe public/evolve-test.html)
+  //   das war der Compositing-Konflikt -> Ruckeln, siehe tests/manual/evolve-test.html)
   // – Schatten ohne filter:blur (Radial-Gradient statt Blur-Filter)
   // – kein transform-style:preserve-3d (ungültige Kombi mit overflow:hidden)
-  const isSafari = isSafariUA();
   const animate3D = !prefersReducedMotion() && supports3DFlip();
 
   return (
@@ -264,18 +263,5 @@ function isOldIOS() {
   try {
     const match = navigator.userAgent.match(/OS (\d+)_/);
     return match ? parseInt(match[1], 10) < 13 : false;
-  } catch { return false; }
-}
-
-
-/**
- * Safari-Erkennung (Mac + iOS): Safari hat ein Compositing-Problem mit
- * backdrop-filter + rotateY gleichzeitig (Ruckeln, Drehung kaum sichtbar).
- * Chrome/Edge enthalten "Chrome" bzw. "Chromium" im User-Agent, Firefox nicht.
- */
-function isSafariUA() {
-  try {
-    const ua = navigator.userAgent || '';
-    return /Safari/i.test(ua) && !/Chrome|Chromium|CriOS|FxiOS|EdgiOS/i.test(ua);
   } catch { return false; }
 }
