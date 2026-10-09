@@ -100,7 +100,12 @@ export default function EvolveCard({ perfume, onClose }) {
   const middle = splitNoteList(perfume.middle);
   const base = splitNoteList(perfume.base);
 
-  // 3D-Flip nur auf geeigneten Geräten, sonst 2D-Fallback (Scale + Fade)
+  // 3D-Flip auch auf Safari: performant gemacht durch
+  // – Blur in separater, statischer Ebene (keine animierten Kinder mehr,
+  //   das war der Compositing-Konflikt -> Ruckeln, siehe public/evolve-test.html)
+  // – Schatten ohne filter:blur (Radial-Gradient statt Blur-Filter)
+  // – kein transform-style:preserve-3d (ungültige Kombi mit overflow:hidden)
+  const isSafari = isSafariUA();
   const animate3D = !prefersReducedMotion() && supports3DFlip();
 
   return (
@@ -108,12 +113,19 @@ export default function EvolveCard({ perfume, onClose }) {
       onClick={() => setClosing(true)}
       style={{
         position: "fixed", inset: 0, zIndex: 9500,
-        background: "rgba(26,26,24,.55)", backdropFilter: "blur(6px)", WebkitBackdropFilter: "blur(6px)",
         display: "flex", alignItems: "center", justifyContent: "center",
         opacity: closing ? 0 : 1, transition: "opacity .35s ease",
         pointerEvents: closing ? "none" : "auto",
       }}
     >
+      {/* Blur in EIGENER, statischer Ebene: backdrop-filter + animiertes Kind
+          in derselben Ebene ruckelt in Safari (Compositing-Konflikt). Diese
+          Ebene selbst animiert nie. */}
+      <div aria-hidden="true" style={{
+        position: "absolute", inset: 0, pointerEvents: "none",
+        background: "rgba(26,26,24,.55)",
+        backdropFilter: "blur(6px)", WebkitBackdropFilter: "blur(6px)",
+      }} />
       {/* Perspektive für den 3D-Dreheffekt */}
       <div style={{ position: "relative", perspective: 900 }}>
         {/* Sterne */}
@@ -136,7 +148,9 @@ export default function EvolveCard({ perfume, onClose }) {
         {animate3D && (
           <span aria-hidden="true" style={{
             position: "absolute", inset: 0, borderRadius: 18,
-            background: "rgba(26,26,24,.45)", filter: "blur(18px)",
+            // Radial-Gradient statt filter:blur -> Safari rendert sonst pro
+            // Frame einen teuren Blur neu (Ruckeln beim Flip)
+            background: "radial-gradient(ellipse at center, rgba(26,26,24,.55) 0%, rgba(26,26,24,.28) 55%, transparent 74%)",
             pointerEvents: "none", zIndex: 0,
             animation: `cardShadowIn 1.4s cubic-bezier(.35,.9,.25,1) both`,
           }} />
@@ -151,7 +165,8 @@ export default function EvolveCard({ perfume, onClose }) {
             width: 216, minHeight: 300, borderRadius: 18, padding: 18,
             background: "linear-gradient(155deg, #534AB7 0%, #7C6FE0 55%, #4A429E 100%)",
             color: "#FAFAF8", boxShadow: "0 20px 50px rgba(26,26,24,.45)",
-            transformStyle: animate3D ? "preserve-3d" : undefined,
+            // transform-style:preserve-3d bewusst NICHT gesetzt: ungültige
+            // Kombi mit overflow:hidden, kostet in Safari unnötig Compositing
             fontFamily: "'Georgia', serif",
             willChange: "transform, opacity", // GPU-Hint für flüssigen Spin
             overflow: "hidden", // damit der Licht-Sweep nicht über die Ecken läuft
@@ -237,5 +252,30 @@ function supports3DFlip() {
     // Zusätzlich: alte iOS-Geräte (iPhone 8 und älter) erkennen
     const oldIOS = isOldIOS();
     return cssOK && cores > 2 && !lowMem && !oldIOS;
+  } catch { return false; }
+}
+
+/**
+ * Erkennt alte iOS-Geräte (kein / schwaches 3D-Compositing).
+ * Wichtig: Funktion fehlte vorher -> ReferenceError in supports3DFlip,
+ * wodurch alle Browser still in den 2D-Fallback fielen.
+ */
+function isOldIOS() {
+  try {
+    const match = navigator.userAgent.match(/OS (\d+)_/);
+    return match ? parseInt(match[1], 10) < 13 : false;
+  } catch { return false; }
+}
+
+
+/**
+ * Safari-Erkennung (Mac + iOS): Safari hat ein Compositing-Problem mit
+ * backdrop-filter + rotateY gleichzeitig (Ruckeln, Drehung kaum sichtbar).
+ * Chrome/Edge enthalten "Chrome" bzw. "Chromium" im User-Agent, Firefox nicht.
+ */
+function isSafariUA() {
+  try {
+    const ua = navigator.userAgent || '';
+    return /Safari/i.test(ua) && !/Chrome|Chromium|CriOS|FxiOS|EdgiOS/i.test(ua);
   } catch { return false; }
 }
