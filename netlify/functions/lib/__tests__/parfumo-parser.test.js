@@ -117,8 +117,8 @@ describe("parfumo-parser – Notenpyramide", () => {
   });
 describe("parfumo-parser – Accorde", () => {
   it("gewichtet nach Größenklasse und sortiert absteigend", () => {
-    const data = parse(FIXTURE, URL);
-    expect(data.accords).toEqual([
+    const res = parse(FIXTURE, URL);
+    expect(res.accords).toEqual([
       { name: "Woody", size: "xl", weight: 5 },
       { name: "Fruchtig", size: "l", weight: 4 },
       { name: "Rauchig", size: "unbekannt", weight: 0 },
@@ -128,13 +128,13 @@ describe("parfumo-parser – Accorde", () => {
 
 describe("parfumo-parser – Diagramme", () => {
   it("erkennt Saison-Diagramme und sortiert die Anteile absteigend", () => {
-    const data = parse(FIXTURE, URL);
-    expect(data.seasons).toEqual({ Herbst: 40, Winter: 30, Frühling: 20, Sommer: 10 });
+    const res = parse(FIXTURE, URL);
+    expect(res.seasons).toEqual({ Herbst: 40, Winter: 30, Frühling: 20, Sommer: 10 });
   });
 
   it("sammelt Nicht-Saison-Diagramme unter other_charts", () => {
-    const data = parse(FIXTURE, URL);
-    expect(data.other_charts).toEqual([{ Damen: 60, Unisex: 40 }]);
+    const res = parse(FIXTURE, URL);
+    expect(res.other_charts).toEqual([{ Damen: 60, Unisex: 40 }]);
   });
 });
 
