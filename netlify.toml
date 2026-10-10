@@ -2,11 +2,15 @@
 [build]
   command = "npm run build"
   publish = "dist"
-  # Secrets-Scan-Ausnahme: Der Supabase publishable/anon Key ist bewusst öffentlich
-  # (landet per VITE_-Präfix im Browser-Bundle, Zugriffsschutz läuft über RLS).
+  # Secrets-Scan-Ausnahmen:
+  # - VITE_SUPABASE_PUBLISHABLE_KEY: Der publishable/anon Key ist bewusst öffentlich
+  #   (landet per VITE_-Präfix im Browser-Bundle, Zugriffsschutz läuft über RLS).
+  # - SUPABASE_URL: Die Supabase-Projekt-URL ist öffentlich und erscheint im Bundle
+  #   über VITE_SUPABASE_URL. Da SUPABASE_URL (Function-Env) denselben Wert hat,
+  #   meldet der Secrets-Scan sonst fälschlich ein "Leak".
   # Vite muss die VITE_-Variablen beim Build sehen → daher hier statt im Build-Env.
   [build.environment]
-    SECRETS_SCAN_OMIT_KEYS = "VITE_SUPABASE_PUBLISHABLE_KEY"
+    SECRETS_SCAN_OMIT_KEYS = "VITE_SUPABASE_PUBLISHABLE_KEY,SUPABASE_URL"
 
 [functions]
 directory = "netlify/functions"
