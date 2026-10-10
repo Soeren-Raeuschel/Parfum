@@ -6,6 +6,7 @@
  */
 
 import React, { useEffect, useState } from "react";
+import ReactDOM from "react-dom";
 import { Dialog } from "@headlessui/react";
 import { S } from "../shared/ui";
 import { isSupabaseConfigured } from "../lib/supabase";
@@ -71,7 +72,7 @@ export default function SupabaseMigrationModal({ open, onClose, items, wishlist,
     }
   }
 
-  return (
+  return ReactDOM.createPortal(
     <Dialog open={open} onClose={busy ? () => {} : handleClose} className="relative z-[10000]">
       <div className="fixed inset-0" style={{ background: "rgba(26,26,24,.45)" }} aria-hidden="true" />
       <div className="fixed inset-0 flex items-center justify-center p-4">
@@ -137,6 +138,7 @@ export default function SupabaseMigrationModal({ open, onClose, items, wishlist,
           </button>
         </Dialog.Panel>
       </div>
-    </Dialog>
+    </Dialog>,
+    document.body
   );
 }
