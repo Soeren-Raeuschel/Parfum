@@ -15,6 +15,8 @@ import { splitNotes } from "../utils/helpers";
 import { groqFetch } from "../utils/groqClient";
 import { lookupByUrl } from "../utils/parfumoLookup";
 import { buildExportCsv, buildExportPayload, exportReplacer, shareOrDownloadFile } from "../utils/collectionIO";
+import { isSupabaseConfigured } from "../lib/supabase";
+import SupabaseMigrationModal from "../components/SupabaseMigrationModal";
 import { getAllNotes, matchPerfume, normalizeTerm } from "../utils/perfumeSearch";
 import { useDebounce } from "../utils/hooks";
 
@@ -1388,6 +1390,7 @@ function SammlungTab({ items, log, notes, onDelete, onUpdate, onExport, onSaveNo
   const [displayCount, setDisplayCount] = useState(20);
   const [filteredItems, setFilteredItems] = useState([]);
   const [exportToast, setExportToast] = useState("");
+  const [showMigrationModal, setShowMigrationModal] = useState(false);
   const inputRef = useRef(null);
   const sammlungDetailRef = useRef(null);
 
@@ -1537,7 +1540,18 @@ function SammlungTab({ items, log, notes, onDelete, onUpdate, onExport, onSaveNo
           className="btn" style={{ ...S.btn("sm"), background: "transparent", border: "0.5px solid #D3D1C7", fontSize: 11, color: "#888780" }}>
           ⇩ CSV
         </button>
+        {isSupabaseConfigured && (
+          <button onClick={() => setShowMigrationModal(true)} aria-label="Daten zu Supabase migrieren"
+            title="Sammlung nach Supabase migrieren (lokale Daten bleiben als Backup erhalten)"
+            className="btn" style={{ ...S.btn("sm"), background: "transparent", border: "0.5px solid #D3D1C7", fontSize: 11, color: "#888780" }}>
+            ☁ Migrieren
+          </button>
+        )}
       </div>
+
+      {/* Supabase-Migrations-Dialog (Login + Upload) */}
+      <SupabaseMigrationModal open={showMigrationModal} onClose={() => setShowMigrationModal(false)}
+        items={items} wishlist={wishlist} notes={notes} fillLevels={fillLevels} priceMl={priceMl} />
 
       {/* Search input */}
       <div style={{ position: "relative", marginBottom: 8 }}>

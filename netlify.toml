@@ -9,8 +9,9 @@ directory = "netlify/functions"
 # Security-Header für alle ausgelieferten Dateien.
 # CSP: Die App lädt Scripte/Styles/Fonts nur von sich selbst (Vite-Bundle,
 # @fontsource), React setzt Inline-Styles ('unsafe-inline' für style-src nötig).
-# Externe Fetch-Ziele laut Code: api.groq.com (KI-Client) und r.jina.ai
-# (Parfumo-Fallback-Lookup). Eigene API läuft unter 'self' (/api/parfum).
+# Externe Fetch-Ziele laut Code: api.open-meteo.com (Wetter), api.groq.com
+# (KI-Client), r.jina.ai (Parfumo-Fallback-Lookup) und *.supabase.co
+# (Auth/DB für die Sammlungs-Migration). Eigene API läuft unter 'self' (/api/parfum).
 [[headers]]
   for = "/*"
   [headers.values]
@@ -18,4 +19,4 @@ directory = "netlify/functions"
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"
     Permissions-Policy = "camera=(), microphone=(), geolocation=(self)"
-    Content-Security-Policy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' https://r.jina.ai; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"
+    Content-Security-Policy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' https://api.open-meteo.com https://api.groq.com https://r.jina.ai https://*.supabase.co; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"
