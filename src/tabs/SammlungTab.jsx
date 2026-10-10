@@ -17,6 +17,7 @@ import { lookupByUrl } from "../utils/parfumoLookup";
 import { buildExportCsv, buildExportPayload, exportReplacer, shareOrDownloadFile } from "../utils/collectionIO";
 import { isSupabaseConfigured } from "../lib/supabase";
 import SupabaseMigrationModal from "../components/SupabaseMigrationModal";
+import ParfumAddByLink from "../components/ParfumAddByLink";
 import { getAllNotes, matchPerfume, normalizeTerm } from "../utils/perfumeSearch";
 import { useDebounce } from "../utils/hooks";
 
@@ -1314,8 +1315,9 @@ function PerfumeList({ items, notes, onClick, noteFieldLabel, fillLevels }) {
   );
 }
 
-function SammlungTab({ items, log, notes, onDelete, onUpdate, onExport, onSaveNote, onLog, fillLevels, onSetFill, priceMl, onSavePriceMl, wishlist }) {
+function SammlungTab({ items, log, notes, onDelete, onUpdate, onExport, onSaveNote, onLog, fillLevels, onSetFill, priceMl, onSavePriceMl, wishlist, onAdd }) {
   const [rawSearch, setRawSearch] = useState("");
+  const [showAdd, setShowAdd] = useState(false); // Parfüm per Parfumo-Link hinzufügen
   const { debounced: debouncedRawSearch } = useDebounce(rawSearch, 300);
   const [activeTerms, setActiveTerms] = useState([]); // committed search terms
   const [fam, setFam] = useState("Alle");
@@ -1464,8 +1466,13 @@ function SammlungTab({ items, log, notes, onDelete, onUpdate, onExport, onSaveNo
 
   return (
     <div>
-      {/* Dezent platzierte Export-Buttons (JSON-Backup / CSV) */}
-      <div style={{ display: "flex", justifyContent: "flex-end", gap: 6, marginBottom: 8 }}>
+      {/* Dezent platzierte Export-Buttons (JSON-Backup / CSV) + Hinzufügen */}
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 6, marginBottom: 8, alignItems: "center" }}>
+        <button onClick={() => setShowAdd(true)} aria-label="Parfüm per Parfumo-Link hinzufügen"
+          title="Parfüm per Parfumo-Link hinzufügen"
+          className="btn" style={{ ...S.btn("pri"), padding: "8px 14px", fontSize: 11, borderRadius: 10 }}>
+          + Hinzufügen
+        </button>
         <button onClick={() => handleDataExport("json")} aria-label="Sammlung als JSON-Backup exportieren"
           title="Daten als JSON-Backup exportieren (lokal, inkl. Wunschliste)"
           className="btn" style={{ ...S.btn("sm"), background: "transparent", border: "0.5px solid #D3D1C7", fontSize: 11, color: "#888780" }}>
@@ -1488,6 +1495,10 @@ function SammlungTab({ items, log, notes, onDelete, onUpdate, onExport, onSaveNo
       {/* Supabase-Migrations-Dialog (Login + Upload) */}
       <SupabaseMigrationModal open={showMigrationModal} onClose={() => setShowMigrationModal(false)}
         items={items} wishlist={wishlist} notes={notes} fillLevels={fillLevels} priceMl={priceMl} log={log} />
+
+      {/* Parfüm per Parfumo-Link hinzufügen (Modal, bleibt gemountet, damit die
+          Celebration-Card nach dem Hinzufügen weiterhin sichtbar bleibt) */}
+      <ParfumAddByLink open={showAdd} items={items} onAdd={onAdd} onClose={() => setShowAdd(false)} />
 
       {/* Search input */}
       <div style={{ position: "relative", marginBottom: 8 }}>

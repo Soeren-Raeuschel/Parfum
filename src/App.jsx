@@ -1166,9 +1166,9 @@ Antworte NUR mit JSON: {"occasion":"...","mood":"...","timeOfDay":"...","intensi
           <div style={{ fontSize: 13, color: "#888780", lineHeight: 1.6, marginBottom: 20, animation: "fadeIn .6s ease-out both", animationDelay: "0.2s" }}>
             Importiere deine Parfüms als TSV-Datei<br />oder füge sie einzeln hinzu.
           </div>
-          <button onClick={() => onNavigate && onNavigate("settings")}
+          <button onClick={() => onNavigate && onNavigate("sammlung")}
             style={{ ...S.btn("pri"), padding: "12px 24px", fontSize: 13, animation: "fadeIn .6s ease-out both", animationDelay: "0.3s" }}>
-            → Zu Einstellungen
+            → Zur Sammlung
           </button>
         </div>
       )}
@@ -1487,7 +1487,7 @@ if (data) {
           onExport={handleExport} onSaveNote={handleSaveNote} onLog={handleLog}
           fillLevels={state.fillLevels} onSetFill={handleSetFill}
           priceMl={state.priceMl} onSavePriceMl={handleSavePriceMl}
-          wishlist={state.wishlist} />
+          wishlist={state.wishlist} onAdd={handleAdd} />
       )}
       {state.tab === "statistik" && (
         <StatistikTab items={state.items} log={state.log} onSelectPerfume={id => { dispatch({ type: 'SET_DETAIL', payload: null }); dispatch({ type: 'SET_BACK_STACK', payload: s => [...s, state.tab].slice(-10) }); dispatch({ type: 'SET_DETAIL', payload: id }); }} />
