@@ -147,8 +147,8 @@ const CustomScrollbar = () => {
     dragStartYRef.current = e.clientY;
     dragStartScrollTopRef.current = window.scrollY;
 
-    document.addEventListener("mousemove", handleMouseMove);
-    document.addEventListener("mouseup", handleMouseUp);
+    document.addEventListener("mousemove", handleMouseMove); // eslint-disable-line no-use-before-define -- sicher: Handler wird erst bei Maus-Events aufgerufen, da sind beide längst definiert
+    document.addEventListener("mouseup", handleMouseUp); // eslint-disable-line no-use-before-define -- sicher: s. o.
   };
 
   const handleMouseMove = (e) => {

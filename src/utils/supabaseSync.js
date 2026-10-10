@@ -201,7 +201,7 @@ function loadSnapshot() {
   catch { return null; }
 }
 function persistSnapshot() {
-  try { localStorage.setItem(SYNC_SNAPSHOT_KEY, JSON.stringify(_snapshot)); }
+  try { localStorage.setItem(SYNC_SNAPSHOT_KEY, JSON.stringify(_snapshot)); } // eslint-disable-line no-use-before-define -- sicher: wird erst nach Initialisierung von _snapshot aufgerufen
   catch { /* Quota o. ä. – Sync läuft weiter, Diffs werden nur größer */ }
 }
 let _snapshot = loadSnapshot();

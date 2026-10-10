@@ -157,14 +157,15 @@ export default function EvolveCard({ perfume, onClose }) {
   //   das war der Compositing-Konflikt -> Ruckeln, siehe tests/manual/evolve-test.html)
   // – Schatten ohne filter:blur (Radial-Gradient statt Blur-Filter)
   // – kein transform-style:preserve-3d (ungültige Kombi mit overflow:hidden)
+  // Animations-Modus zentral ermitteln (reduced / 3d / 2d) – inkl. Log + Debug-Badge
+  // Fix: Muss VOR reducedMotion/animate3D deklariert werden (war vorher danach –
+  // TDZ-Fehler "Cannot access 'i' before initialization" beim Öffnen der Karte)
+  const animationMode = getAnimationMode();
   const reducedMotion = animationMode.mode === "reduced";
   const animate3D = animationMode.mode === "3d";
   // Debug-Badge: per Konsole einschaltbar mit
   //   localStorage.setItem('parfum_anim_debug','1')  -> Seite neu laden
   const debugBadge = isDebugEnabled();
-
-  // Animations-Modus zentral ermitteln (reduced / 3d / 2d) – inkl. Log + Debug-Badge
-  const animationMode = getAnimationMode();
 
   // Log bei jedem Öffnen des Overlays – macht sichtbar, welcher Modus greift
   useEffect(() => {

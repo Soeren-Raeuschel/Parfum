@@ -57,6 +57,11 @@ export default [
       "default-case-last": "error",
       "no-new-native-nonconstructor": "error",
       "no-shadow-restricted-names": "error",
+      // Fängt TDZ-Crasher ab wie "Cannot access 'i' before initialization"
+      // (EvolveCard-Bug: animationMode wurde vor seiner Deklaration gelesen).
+      // functions: false – für Hoisting ist das ok (Funktionsdeklarationen sind
+      // sicher gehoistet); classes/variables/enums/typedefs bleiben Fehler.
+      "no-use-before-define": ["error", { functions: false, classes: true, variables: true, allowNamedExports: false }],
 
       // ── Stil-Bugs als Warnungen (blockieren Deploy nicht, aber auffällig) ──
       // args: "none" – unbenutzte Funktionsparameter (z. B. Props einer

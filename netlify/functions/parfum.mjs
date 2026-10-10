@@ -82,6 +82,15 @@ async function revalidateCache(url, cacheKey, oldData) {
   }
 }
 
+// Konstanten vor die Scraper-Funktionen verschoben (no-use-before-define):
+const BASE = "https://www.parfumo.de/Parfums";
+const HEADERS = {
+  "User-Agent":
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+  Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+  "Accept-Language": "de-DE,de;q=0.9,en;q=0.5",
+};
+
 /**
  * Kompletter Scrape-Vorgang: Parfumo-Seite laden, parsen und die per AJAX
  * nachgeladenen Saison-/Kuchendiagramme ergänzen.
@@ -141,14 +150,6 @@ async function scrapeDuft(url) {
 
   return data;
 }
-
-const BASE = "https://www.parfumo.de/Parfums";
-const HEADERS = {
-  "User-Agent":
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-  Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-  "Accept-Language": "de-DE,de;q=0.9,en;q=0.5",
-};
 
 // Rate-Limit: 30 Requests pro Minute pro IP. Schutz für Parfumo (und unsere
 // eigene IP bei Netlify) – Antworten sind zusätzlich 30 Tage im CDN gecacht.
