@@ -27,6 +27,11 @@ const MAX_DAY_KEYS = 2000; // Obergrenze pro Duft (Schutz vor unbegrenztem Wachs
 // kriterienScore beeinflusst (nie den Aging-Faktor).
 export const FEEDBACK_BONUS_MAX = 0.15;
 export const FEEDBACK_STEP = 0.05; // Bonus-Schritt pro gut/schlecht-Abstand
+// Feintuning: Gewicht von "Naja"-Feedback (0 = neutral; z.B. 0.25 = leicht negativ)
+export const FEEDBACK_OK_WEIGHT = 0;
+// Feintuning: Halbwertszeit (Tage) für Feedback-Events – älteres Feedback zählt
+// exponentiell weniger (Zeit-Decay). 0 = kein Decay.
+export const FEEDBACK_HALF_LIFE_DAYS = 120;
 
 // ── Backend-Abstraktion (lokal jetzt, Supabase später) ───────────────────────
 function createLocalStorageBackend() {
@@ -192,14 +197,15 @@ export function recordFeedback(perfumeId, contextKey, rating) {
     ? { good: 0, ok: 0, bad: 0, ...entry[contextKey] }
     : { good: 0, ok: 0, bad: 0 };
   ctx[rating] += 1;
+  // Event-Historie für Zeit-Decay (rückwärtskompatibel: alte Einträge ohne hist
+  // fallen automatisch auf die reinen Counts zurück)
+  if (!Array.isArray(ctx.hist)) ctx.hist = [];
+  ctx.hist.push({ r: rating, ts: Date.now() });
+  // Obergrenze, damit der Store nicht unbegrenzt wächst
+  if (ctx.hist.length > 200) ctx.hist = ctx.hist.slice(-200);
   entry[contextKey] = ctx;
   own[id] = entry;
   backend.save(FEEDBACK_STORE_KEY, own);
-}
-
-/** Rohes Feedback-Map: { [id]: { [contextKey]: { good, ok, bad } } }. */
-export function getFeedbackMap() {
-  return readFeedbackStore();
 }
 
 /**
@@ -207,16 +213,67 @@ export function getFeedbackMap() {
  * Formel: (gut − schlecht) × FEEDBACK_STEP, geklemmt auf ±FEEDBACK_BONUS_MAX.
  * "Naja" ist neutral (zählt weder gut noch schlecht). Beeinflusst NUR den
  * kriterienScore, nie den Aging-Faktor.
+ *
+ * Feineres Tuning: Wenn Event-Historie (hist) vorhanden ist, wird jedes Event
+ * mit Zeit-Decay gewichtet (Halbwertszeit FEEDBACK_HALF_LIFE_DAYS), und "Naja"
+ * geht mit FEEDBACK_OK_WEIGHT ein. Ohne hist gilt die klassische Count-Formel.
+ * @param {number} [nowTs] – current time (nur für Tests, Standard Date.now())
  */
-export function getPersonalBonus(perfumeId, contextKey, feedbackMap = null) {
+export function getPersonalBonus(perfumeId, contextKey, feedbackMap = null, nowTs = Date.now()) {
   const map = feedbackMap || readFeedbackStore();
   const entry = map[String(perfumeId)];
   const ctx = entry && entry[contextKey];
   if (!ctx || typeof ctx !== "object") return 0;
+
+  // Feinere Gewichtung über Event-Historie (mit Decay), falls vorhanden
+  if (Array.isArray(ctx.hist) && ctx.hist.length > 0) {
+    let good = 0, bad = 0, ok = 0;
+    for (const ev of ctx.hist) {
+      if (!ev || typeof ev !== "object") continue;
+      let w = 1;
+      if (FEEDBACK_HALF_LIFE_DAYS > 0 && typeof ev.ts === "number") {
+        const days = Math.max(0, (nowTs - ev.ts) / DAY_MS);
+        w = Math.pow(0.5, days / FEEDBACK_HALF_LIFE_DAYS);
+      }
+      if (ev.r === "good") good += w;
+      else if (ev.r === "bad") bad += w;
+      else if (ev.r === "ok") ok += w;
+    }
+    const raw = Math.round((good + ok * FEEDBACK_OK_WEIGHT - bad) * FEEDBACK_STEP * 1000) / 1000;
+    return Math.max(-FEEDBACK_BONUS_MAX, Math.min(FEEDBACK_BONUS_MAX, raw));
+  }
+
+  // Klassischer Fallback: reine Counts (ältere Daten ohne hist)
   const good = typeof ctx.good === "number" ? ctx.good : 0;
   const bad = typeof ctx.bad === "number" ? ctx.bad : 0;
-  const raw = (good - bad) * FEEDBACK_STEP;
+  const ok = typeof ctx.ok === "number" ? ctx.ok : 0;
+  const raw = Math.round((good + ok * FEEDBACK_OK_WEIGHT - bad) * FEEDBACK_STEP * 1000) / 1000;
   return Math.max(-FEEDBACK_BONUS_MAX, Math.min(FEEDBACK_BONUS_MAX, raw));
+}
+
+/**
+ * Rohes Feedback-Count-Map für einen Kontext: { [id]: { good, ok, bad, events } }.
+ * Für Transparenz-Ansichten ("Warum dieser Vorschlag?") – kein Scoring.
+ */
+export function getFeedbackCountsMap(contextKey, feedbackMap = null) {
+  const map = feedbackMap || readFeedbackStore();
+  const out = {};
+  for (const [id, entry] of Object.entries(map)) {
+    const ctx = entry && entry[contextKey];
+    if (!ctx || typeof ctx !== "object") continue;
+    out[id] = {
+      good: typeof ctx.good === "number" ? ctx.good : 0,
+      ok: typeof ctx.ok === "number" ? ctx.ok : 0,
+      bad: typeof ctx.bad === "number" ? ctx.bad : 0,
+      events: Array.isArray(ctx.hist) ? ctx.hist.length : 0,
+    };
+  }
+  return out;
+}
+
+/** Rohes Feedback-Map: { [id]: { [contextKey]: { good, ok, bad } } }. */
+export function getFeedbackMap() {
+  return readFeedbackStore();
 }
 
 /**

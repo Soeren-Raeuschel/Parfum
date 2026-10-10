@@ -157,7 +157,28 @@ export default function EvolveCard({ perfume, onClose }) {
   //   das war der Compositing-Konflikt -> Ruckeln, siehe tests/manual/evolve-test.html)
   // – Schatten ohne filter:blur (Radial-Gradient statt Blur-Filter)
   // – kein transform-style:preserve-3d (ungültige Kombi mit overflow:hidden)
-  const animate3D = !prefersReducedMotion() && supports3DFlip();
+  const reducedMotion = animationMode.mode === "reduced";
+  const animate3D = animationMode.mode === "3d";
+  // Debug-Badge: per Konsole einschaltbar mit
+  //   localStorage.setItem('parfum_anim_debug','1')  -> Seite neu laden
+  const debugBadge = isDebugEnabled();
+
+  // Animations-Modus zentral ermitteln (reduced / 3d / 2d) – inkl. Log + Debug-Badge
+  const animationMode = getAnimationMode();
+
+  // Log bei jedem Öffnen des Overlays – macht sichtbar, welcher Modus greift
+  useEffect(() => {
+    if (!perfume || !animationMode) return;
+    const { mode, reasons } = animationMode;
+    const prefix = "[EvolveCard] Animations-Modus:";
+    if (mode === "reduced") {
+      console.info(`${prefix} reduced (prefers-reduced-motion aktiv)`);
+    } else if (mode === "3d") {
+      console.info(`${prefix} 3d (voller 3D-Flip aktiv)`);
+    } else {
+      console.info(`${prefix} 2d – 3D-Flip deaktiviert. Gründe: ${reasons.join("; ")}`);
+    }
+  }, [perfume, animationMode]);
 
   return (
     <div
@@ -179,12 +200,25 @@ export default function EvolveCard({ perfume, onClose }) {
       }} />
       {/* Perspektive für den 3D-Dreheffekt */}
       <div style={{ position: "relative", perspective: 900 }}>
+        {/* Debug-Badge: zeigt den aktiven Animations-Modus sichtbar an.
+            Aktivieren: localStorage.setItem('parfum_anim_debug','1') + Reload */}
+        {debugBadge && (
+          <div role="note" style={{
+            position: "absolute", top: 12, left: "50%", transform: "translateX(-50%)",
+            zIndex: 2, padding: "4px 10px", borderRadius: 999,
+            background: "rgba(26,26,24,.8)", color: "#F5C872",
+            fontFamily: "monospace", fontSize: 10, letterSpacing: "0.5px",
+            whiteSpace: "nowrap", pointerEvents: "none",
+          }}>
+            anim: {animationMode.mode}{animationMode.reasons.length > 0 && ` (${animationMode.reasons.join(", ")})`}
+          </div>
+        )}
         {/* Sterne */}
         {STARS.map((s, i) => (
           <span key={i} style={{
             position: "absolute", left: "50%", top: 0, pointerEvents: "none",
             // reduced-motion: Sterne komplett weglassen
-            display: prefersReducedMotion() ? "none" : undefined,
+            display: reducedMotion ? "none" : undefined,
             animation: `starBurst 1.1s cubic-bezier(.22,1,.36,1) ${s.delay}ms both`,
             // Custom Props für die Keyframes
             ...({ "--dx": `${s.dx}px`, "--dy": `${s.dy}px` }),
@@ -223,7 +257,7 @@ export default function EvolveCard({ perfume, onClose }) {
             overflow: "hidden", // damit der Licht-Sweep nicht über die Ecken läuft
             // Animation je nach Gerät: 3D-Flip, 2D-Fallback (schwache/alte
             // Geräte) oder einfaches Scale-in bei prefers-reduced-motion
-            animation: prefersReducedMotion()
+            animation: reducedMotion
               ? "scaleIn .2s ease-out both"
               : animate3D
                 ? "cardSpinIn 1.4s cubic-bezier(.35,.9,.25,1) both"
@@ -231,7 +265,7 @@ export default function EvolveCard({ perfume, onClose }) {
           }}
         >
           {/* Licht-Sweep nach dem Landen (nur bei aktivierten Animationen) */}
-          {!prefersReducedMotion() && (
+          {!reducedMotion && (
             <span aria-hidden="true" style={{
               position: "absolute", top: 0, bottom: 0, left: 0, width: "45%",
               background: "linear-gradient(90deg, transparent, rgba(250,250,248,.35), transparent)",
@@ -289,26 +323,47 @@ function prefersReducedMotion() {
 }
 
 /**
- * 3D-Flip nur auf Geräten, die das auch performant können:
- * – CSS.supports-Check für perspective/preserve-3d (sehr alte Browser)
- * – Hardware-Heuristik: CPU-Cores + deviceMemory (falls verfügbar)
- *   ≤ 2 Cores ODER ≤ 2 GB RAM → schwaches/altes Gerät → 2D-Fallback.
+ * Ermittelt zentral den Animations-Modus der EvolveCard:
+ * – "reduced": prefers-reduced-motion aktiv (Sterne aus, kein Flip)
+ * – "3d":      voller 3D-Flip (cardSpinIn)
+ * – "2d":      Fallback (cardSpinIn2D) – nur Scale + Fade, KEINE Drehung
+ * reasons listet auf, WARUM der 2d-Fallback gewählt wurde (Diagnose).
  */
-function supports3DFlip() {
+function getAnimationMode() {
+  // 1. Reduce-Motion hat Vorrang (Barrierefreiheit)
+  if (prefersReducedMotion()) return { mode: "reduced", reasons: [] };
+
+  const reasons = [];
   try {
     const cssOK = window.CSS?.supports?.("(perspective: 1px) and (transform-style: preserve-3d)");
+    if (!cssOK) reasons.push("css: perspective/preserve-3d nicht unterstützt");
+
     const cores = navigator.hardwareConcurrency || 4;
+    if (navigator.hardwareConcurrency && cores <= 2) {
+      reasons.push(`hw: nur ${cores} CPU-Cores`);
+    }
+
     const mem = navigator.deviceMemory;
-    const lowMem = typeof mem === 'number' && mem <= 2;
-    // Zusätzlich: alte iOS-Geräte (iPhone 8 und älter) erkennen
-    const oldIOS = isOldIOS();
-    return cssOK && cores > 2 && !lowMem && !oldIOS;
-  } catch { return false; }
+    if (typeof mem === "number" && mem <= 2) {
+      reasons.push(`hw: nur ${mem} GB RAM`);
+    }
+
+    if (isOldIOS()) reasons.push("hw: alte iOS-Version (< 13)");
+  } catch (err) {
+    reasons.push(`fehler: ${err?.message || "unbekannt"}`);
+  }
+
+  return { mode: reasons.length === 0 ? "3d" : "2d", reasons };
+}
+
+/** Debug-Badge aktiv? Einschalten: localStorage.setItem('parfum_anim_debug','1') + Reload. */
+function isDebugEnabled() {
+  try { return localStorage.getItem("parfum_anim_debug") === "1"; } catch { return false; }
 }
 
 /**
  * Erkennt alte iOS-Geräte (kein / schwaches 3D-Compositing).
- * Wichtig: Funktion fehlte vorher -> ReferenceError in supports3DFlip,
+ * Wichtig: Funktion fehlte vorher -> ReferenceError in der Modus-Ermittlung,
  * wodurch alle Browser still in den 2D-Fallback fielen.
  */
 function isOldIOS() {

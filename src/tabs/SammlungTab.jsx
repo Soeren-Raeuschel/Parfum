@@ -8,6 +8,8 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { Dialog } from "@headlessui/react";
 import { S, FamilyPill, Stars, useBodyLock } from "../shared/ui";
+import { triggerSprayAnimation } from "../shared/spray";
+
 import { CONC_COLORS, FAMILIES, FAM_COLORS, NOTE_CAT_COLORS, SEASONS, primaryFamily } from "../shared/constants";
 import { splitNotes } from "../utils/helpers";
 import { groqFetch } from "../utils/groqClient";

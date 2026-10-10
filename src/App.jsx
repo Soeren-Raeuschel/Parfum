@@ -7,11 +7,12 @@ import { List as FixedSizeListVirtual, useDynamicRowHeight } from "react-window"
 import { AppError, recordError, InvalidResponseError, ApiError, NetworkError, RateLimitError } from "./utils/errorHandler"; // Fix: ApiError/NetworkError/RateLimitError wurden in groqFetch verwendet, aber nicht importiert → "Can't find variable: ApiError"
 import { FileUpload } from "./components/ui/file-upload";
 import EvolveCard from "./components/EvolveCard";
+import WhySuggestionDialog from "./components/WhySuggestionDialog";
 import { AiSparkle } from "./components/AiSparkle";
 import { splitNotes } from "./utils/helpers";
 import { stripDiacritics, normalizeText, tokenizeText } from "./utils/perfumeMatch"; // Fix: normalizeText/stripDiacritics/tokenizeText wurden verwendet, aber nicht importiert → "Can't find variable: normalizeText"
 
-import { getWearMap, recordWear, recordFeedback, feedbackContextKey, getPersonalBonusMap } from "./picker/wearStore";
+import { getWearMap, recordWear, recordFeedback, feedbackContextKey, getPersonalBonusMap, getFeedbackCountsMap } from "./picker/wearStore";
 import { PICKER_CONFIG } from "./picker/pickerConfig";
 import {
   buildPickerSelection,
@@ -25,7 +26,8 @@ import {
   KASSEL_COORDS,
 } from "./picker/todayIntegration";
 // ── Gemeinsame Module (aus App.jsx ausgelagert) ─────────────────────────────
-import { S, FamilyPill, MiniBar, Stars, useBodyLock } from "./shared/ui";
+import { S, FamilyPill, MiniBar, Stars, useBodyLock, TabSkeleton } from "./shared/ui";
+import { triggerSprayAnimation } from "./shared/spray";
 import {
   KEYS, SEASON_COLORS, FAM_COLORS, NOTE_TAGS, WISH_PRIOS, getSeasonColor,
   FAMILIES, SEASONS, NOTE_CATEGORIES, NOTE_CAT_COLORS, CONC_COLORS, NOTE_TO_CAT,
@@ -394,30 +396,78 @@ function HeuteTab({ items, log, onLog, pushError, prefs, priceMl, onSelectPerfum
   const [lastPickInfo, setLastPickInfo] = useState(null); // { relaxed, candidates, relaxedThreshold }
   const [debugOpen, setDebugOpen] = useState(false);      // Debug-Ansicht (standardmäßig zu)
   const [feedbackFor, setFeedbackFor] = useState(null);   // Duft, der Feedback erwartet
+  const [feedbackDone, setFeedbackDone] = useState(null); // { id, rating } – kurzzeitige Bestätigungs-Animation nach dem Tippen
   const [temperature, setTemperature] = useState(null);   // Temperatur aus Open-Meteo
   const [wearVersion, setWearVersion] = useState(0);      // löst Wear-Map-Neuladen aus
 
-  async function fetchAutoWeather() {
-    // Wetter wird standortbasiert geladen: Zuerst Browser-Geolocation,
-    // bei Fehler/Verweigerung/Nicht-Verfügbarkeit Fallback auf Kassel.
-    // Der Abruf passiert ausschließlich über den Button (nicht beim App-Start).
+  // Gespeicherte Geolocation-Berechtigungsentscheidung (localStorage-Mirror).
+// Der Browser merkt sich die Entscheidung selbst, aber dieser Mirror erlaubt
+// es, bei "denied" den Dialog-Versuch beim nächsten App-Start zu überspringen
+// und direkt den Kassel-Fallback zu nutzen.
+const GEO_PERMISSION_KEY = "parfum_geo_permission_v1";
+
+function readGeoPermission() {
+  try {
+    return JSON.parse(localStorage.getItem(GEO_PERMISSION_KEY) || "{}").state || null;
+  } catch { return null; }
+}
+
+function writeGeoPermission(state) {
+  try {
+    localStorage.setItem(GEO_PERMISSION_KEY, JSON.stringify({ state, at: Date.now() }));
+  } catch {}
+}
+
+async function fetchAutoWeather(forcePrompt = false) {
+    // Wetter wird standortbasiert geladen: Zuerst Browser-Geolocation
+    // (Browser zeigt den Berechtigungs-Dialog – erst nach Bestätigung wird der
+    // echte Standort verwendet), bei Verweigerung/Fehler Fallback auf Kassel.
+    // Die Entscheidung wird in localStorage gespiegelt (GEO_PERMISSION_KEY);
+    // bei gespeicherter Ablehnung wird der Dialog beim App-Start übersprungen.
+    // forcePrompt=true (Button "Standort nutzen") ignoriert die Ablehnung.
     setWeatherLoading(true);
     try {
       let lat = KASSEL_COORDS.lat;
       let lon = KASSEL_COORDS.lon;
       let usedFallback = false;
-      if (navigator.geolocation) {
-        try {
-          const pos = await new Promise((res, rej) =>
-            navigator.geolocation.getCurrentPosition(res, rej, { timeout: 8000 }));
-          lat = pos.coords.latitude;
-          lon = pos.coords.longitude;
-        } catch {
-          // Geolocation verweigert/nicht verfügbar → Fallback Kassel
-          usedFallback = true;
-        }
-      } else {
+      const stored = readGeoPermission();
+      const hasGeo = typeof navigator !== "undefined" && !!navigator.geolocation;
+      if (forcePrompt && stored === "denied") {
+        // Manueller Button-Klick: gespeicherte Ablehnung aufheben und neu fragen
+        writeGeoPermission(null);
+      }
+      if (!hasGeo || readGeoPermission() === "denied") {
+        // Keine Geolocation-API oder vorher abgelehnt → direkt Kassel-Fallback
         usedFallback = true;
+      } else {
+        // Echten Browser-Berechtigungsstatus prüfen: Nur bei "prompt" bzw.
+        // "granted" kann ein Standort-Abruf Sinn machen. Bei "denied" hat der
+        // Browser die Berechtigung dauerhaft blockiert – getCurrentPosition
+        // würde dann sofort fehlschlagen OHNE Frage-Fenster anzuzeigen.
+        let browserState = "prompt";
+        try {
+          if (navigator.permissions && navigator.permissions.query) {
+            browserState = (await navigator.permissions.query({ name: "geolocation" })).state || "prompt";
+          }
+        } catch {}
+        if (browserState === "denied") {
+          // Kein Frage-Fenster möglich → Kassel-Fallback + Anleitung per Toast
+          usedFallback = true;
+          writeGeoPermission("denied");
+          showToast("Standort ist im Browser blockiert – in den Seiten-Berechtigungen erlauben und erneut klicken");
+        } else {
+          try {
+            const pos = await new Promise((res, rej) =>
+              navigator.geolocation.getCurrentPosition(res, rej, { timeout: 8000 }));
+            lat = pos.coords.latitude;
+            lon = pos.coords.longitude;
+            writeGeoPermission("granted");
+          } catch {
+            // Geolocation verweigert/nicht verfügbar → Fallback Kassel + ablehnen merken
+            usedFallback = true;
+            writeGeoPermission("denied");
+          }
+        }
       }
       const data = await withRetry(() => fetchWeather(lat, lon));
       // fetchWeather wirft bei Fehlern jetzt (nach 3 Retry-Versuchen) – der catch-Block unten behandelt sie
@@ -476,8 +526,14 @@ function HeuteTab({ items, log, onLog, pushError, prefs, priceMl, onSelectPerfum
     setTime(h < 10 ? "morning" : h < 14 ? "afternoon" : h < 20 ? "evening" : "night");
   }, []);
 
-  // Fix: Wetter wird NICHT mehr beim App-Start geladen (früherer useEffect feuerte beim Mount).
-  // Der Abruf passiert ausschließlich über den Button (fetchAutoWeather).
+  // Wetter automatisch beim App-Start laden: Der Browser zeigt den
+  // Geolocation-Berechtigungs-Dialog. Erst nach Bestätigung ("Zulassen") wird
+  // der echte Standort genutzt; bei Ablehnung/Fehler greift der Kassel-Fallback.
+  // Der Button bleibt als manuelle Nachlade-Möglichkeit erhalten.
+  useEffect(() => {
+    fetchAutoWeather();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
 
   async function interpretDayDescription(text) {
@@ -619,6 +675,7 @@ const recCtx = useMemo(() => {
           intensityPref: effIntensity, longevityPref: effLongevity, temperature,
           recentPrimaryFamilies: recentPrimaryFamilies(wearMap),
           personalBonusMap: getPersonalBonusMap(ctxKey),
+          feedbackCountsMap: getFeedbackCountsMap(ctxKey),
         });
         const result = runPickerForToday(items, wearMap, selection, {
           excludeIds: [...excludedIds, ...excludeExtra],
@@ -738,6 +795,9 @@ const recCtx = useMemo(() => {
       showToast("Feedback konnte nicht gespeichert werden");
     }
     setFeedbackFor(null);
+    // Kurze Bestätigungs-Animation am selben Ort anzeigen (Feedback-Panel ersetzt sich selbst)
+    setFeedbackDone({ id: p.id, rating });
+    setTimeout(() => setFeedbackDone(cur => (cur && cur.id === p.id ? null : cur)), 1400);
   }
 
   // "Anderer Vorschlag": aktuellen Vorschlag ablehnen und neu ziehen
@@ -764,6 +824,7 @@ const recCtx = useMemo(() => {
 
   // Karte für eine Empfehlung
   function RecCard({ p, role, rank }) {
+    const [whyOpen, setWhyOpen] = useState(false);
     const isTop1 = role === "top1";
     const isWild = role === "wildcard";
     const fc = FAM_COLORS[p.family] || "#888";
@@ -797,6 +858,17 @@ const recCtx = useMemo(() => {
             {["top2", "top3"].includes(role) && <span style={{ fontSize: 9, letterSpacing: "1px", color: "#888780" }}>#{rank}</span>}
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <button onClick={() => setWhyOpen(true)}
+              style={{ fontSize: 10, padding: "3px 8px", borderRadius: 8, border: "1px solid #E8E6E0", background: "#fff", color: "#888780", cursor: "pointer" }}>
+              Warum?
+            </button>
+            <WhySuggestionDialog
+              perfume={p}
+              selection={recs && recs._selection ? recs._selection : null}
+              wearMap={wearMapMemo}
+              open={whyOpen}
+              onClose={() => setWhyOpen(false)}
+            />
           </div>
         </div>
 
@@ -838,6 +910,7 @@ const recCtx = useMemo(() => {
                   {[["good", "Passte gut", "#1D9E75"], ["ok", "Naja", "#BA7517"], ["bad", "Passte nicht", "#E24B4A"]].map(([rating, label, color]) => (
                     <button key={rating} onClick={() => sendFeedback(p, rating)}
                       aria-label={`Feedback: ${label}`}
+                      className="animate-in fade-in zoom-in-95 duration-150"
                       style={{
                         ...S.btn("out"), flex: 1, fontSize: 10, minHeight: 44,
                         padding: "8px 4px", color, borderColor: color,
@@ -847,6 +920,16 @@ const recCtx = useMemo(() => {
                     </button>
                   ))}
                 </div>
+              </div>
+            )}
+            {/* Bestätigungs-Animation nach dem Feedback-Tap (ersetzt das Panel kurz) */}
+            {feedbackDone && feedbackDone.id === p.id && (
+              <div className="feedback-confirm animate-in fade-in zoom-in-95 duration-200" style={{
+                marginTop: 10, paddingTop: 8, borderTop: "1px solid #E8E6E0",
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                fontSize: 11, color: "#1D9E75"
+              }} role="status">
+                <span style={{ fontSize: 14 }}>✓</span> Notiert – danke!
               </div>
             )}
           </div>
@@ -875,7 +958,7 @@ const recCtx = useMemo(() => {
       <div className="card" style={{marginBottom: 12, padding: "10px 14px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: weatherData ? 8 : 0 }}>
           <div className="lbl">WETTER AUTOMATISCH ERKENNEN</div>
-          <button onClick={fetchAutoWeather} disabled={weatherLoading}
+          <button onClick={() => fetchAutoWeather(true)} disabled={weatherLoading}
             style={{
               ...S.btn("out"), fontSize: 10, padding: "5px 10px", borderRadius: 16,
               opacity: weatherLoading ? .6 : 1
@@ -884,7 +967,7 @@ const recCtx = useMemo(() => {
           </button>
         </div>
         {weatherData && <WeatherWidget weatherData={weatherData} onUse={applyWeather} />}
-        {!weatherData && !weatherLoading && <div style={{ fontSize: 10, color: "#B4B2A9" }}>Noch kein Wetter geladen – Klick lädt das Wetter für deinen Standort (Fallback: Kassel). Oder manuell unten auswählen.</div>}
+        {!weatherData && !weatherLoading && <div style={{ fontSize: 10, color: "#B4B2A9" }}>Wetter wird automatisch beim Start geladen (Standort-Fallback: Kassel). Oder manuell unten auswählen.</div>}
       </div>
 
       <Sec id="crit" lbl="KRITERIEN">
@@ -1635,8 +1718,8 @@ state.items.filter(p => p.format === "Flakon" && state.fillLevels[p.id] !== unde
     </div>
   </header>
   <PullToRefresh tabKey={state.tab}>
-    <main key={state.tab} className="body" style={{ animation: "fadeInUp .18s ease-out both" }} role="tabpanel" id={`panel-${state.tab}`} aria-labelledby={`tab-${state.tab}`}>
-      <Suspense fallback={<div className="skeleton" style={{ height: 220, margin: 16, borderRadius: 12 }} />}>
+    <main key={state.tab} className="body animate-in fade-in slide-in-from-bottom-2 duration-200 fill-mode-both" role="tabpanel" id={`panel-${state.tab}`} aria-labelledby={`tab-${state.tab}`}>
+      <Suspense fallback={<TabSkeleton />}>
       {state.tab === "heute" && (
         <HeuteTab items={state.items} log={state.log} onLog={handleLog}
           pushError={pushError} prefs={state.prefs} priceMl={state.priceMl}

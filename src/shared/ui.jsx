@@ -77,10 +77,21 @@ function MiniBar({ pct, color, height = 5 }) {
 
 // ── Star rating ───────────────────────────────────────────────────────────────
 function Stars({ rating, onSet, size = 18 }) {
+  // Pop-Animation: der zuletzt geklickte Stern bekommt .star-pop (Keyframes in style.css)
+  const [pop, setPop] = React.useState(null);
+  const popTimer = React.useRef(null);
+  function handleSet(n) {
+    if (!onSet) return;
+    setPop(n);
+    clearTimeout(popTimer.current);
+    popTimer.current = setTimeout(() => setPop(cur => (cur === n ? null : cur)), 400);
+    onSet(n);
+  }
   return (
     <div style={{ display: "flex", gap: 2 }} role="group" aria-label={`Bewertung: ${rating || 0} von 5 Sternen`}>
       {[1, 2, 3, 4, 5].map(n => (
-        <button key={n} onClick={() => onSet && onSet(n)}
+        <button key={n} onClick={() => handleSet(n)}
+          className={`star-btn${pop === n ? " star-pop" : ""}`}
           aria-label={`${n} Stern${n > 1 ? "e" : ""}`}
           aria-pressed={n <= (rating || 0)}
           style={{
@@ -88,6 +99,23 @@ function Stars({ rating, onSet, size = 18 }) {
             color: n <= (rating || 0) ? "#BA7517" : "#D3D1C7", padding: "6px 4px", lineHeight: 1, minHeight: 36, minWidth: 28
           }}>★</button>
       ))}
+    </div>
+  );
+}
+
+// ── TabSkeleton: mehrzeiliger Skeleton-Fallback für lazy Tabs (statt Spinner) ──
+function TabSkeleton() {
+  return (
+    <div style={{ padding: 16 }} aria-busy="true" aria-live="polite">
+      {/* Titelzeile */}
+      <div className="skeleton" style={{ height: 16, width: "45%", marginBottom: 16 }} />
+      {/* Hauptkarte */}
+      <div className="skeleton" style={{ height: 128, borderRadius: 12, marginBottom: 12 }} />
+      {/* Zwei Listenkarten */}
+      <div className="skeleton" style={{ height: 72, borderRadius: 12, marginBottom: 12 }} />
+      <div className="skeleton" style={{ height: 72, borderRadius: 12, marginBottom: 12 }} />
+      {/* Fußzeile */}
+      <div className="skeleton" style={{ height: 44, borderRadius: 12 }} />
     </div>
   );
 }
@@ -107,4 +135,4 @@ function useBodyLock(active) {
 }
 
 
-export { S, FamilyPill, MiniBar, Stars, useBodyLock };
+export { S, FamilyPill, MiniBar, Stars, useBodyLock, TabSkeleton };

@@ -5,6 +5,8 @@ import { splitNotes } from "../utils/helpers";
 import { stripDiacritics } from "../utils/perfumeMatch";
 import { NOTE_TO_CAT, FAM_COLORS, primaryFamily } from "../shared/constants";
 import { LAYERING_COMPAT, getLayerCompat, analyzeNoteCompat, notesMatch, normNote } from "../shared/layering";
+import { triggerSprayAnimation } from "../shared/spray";
+
 
 function LayeringPerfumeSelect({ label, inputId, search, setSearch, filtered, selected, setSelected, items }) {
   const selectedP = items.find(p => p.id === selected) || null;
@@ -670,39 +672,6 @@ function LayeringTab({ items }) {
       </div>}
     </div>
   );
-}
-
-// ── Heute tab ─────────────────────────────────────────────────────────────────
-// ── Spray-Animation (Partikel beim Tragen) ────────────────────────────────────
-function triggerSprayAnimation(buttonEl) {
-  if (!buttonEl) return;
-  const rect = buttonEl.getBoundingClientRect();
-  const cx = rect.left + rect.width / 2;
-  const cy = rect.top + rect.height / 2;
-  const colors = ["#534AB7", "#1D9E75", "#BA7517", "#D4537E", "#185FA5"];
-  // Attach to #root (the app's fixed container) rather than body.
-  // On iOS with position:fixed on body, particles appended to body can end up
-  // outside the visible viewport or get clipped by the safe-area region.
-  const container = document.getElementById("root") || document.body;
-  for (let i = 0; i < 12; i++) {
-    const el = document.createElement("div");
-    const angle = (i / 12) * 2 * Math.PI - Math.PI / 2 + (Math.random() - 0.5) * 0.8;
-    const dist = 28 + Math.random() * 32;
-    const dx = Math.cos(angle) * dist;
-    const dy = Math.sin(angle) * dist - 10;
-    const size = 4 + Math.random() * 5;
-    el.style.cssText = `
-      position:fixed; left:${cx}px; top:${cy}px;
-      width:${size}px; height:${size}px; border-radius:50%;
-      background:${colors[i % colors.length]};
-      pointer-events:none; z-index:99999;
-      --dx:${dx}px; --dy:${dy}px;
-      animation:sprayParticle 0.55s cubic-bezier(0.25,0.46,0.45,0.94) forwards;
-      margin-left:-${size/2}px; margin-top:-${size/2}px;
-    `;
-    container.appendChild(el);
-    setTimeout(() => el.remove(), 600);
-  }
 }
 
 

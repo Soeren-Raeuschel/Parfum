@@ -77,7 +77,7 @@ const WEATHER_ALIAS = Object.freeze({ rainy: "rain" });
  * occasion/weather werden über Aliase vereinheitlicht; "Schlafen" erzwingt
  * Leicht/Kurz (gleiche Regel wie in der bisherigen UI).
  */
-export function buildPickerSelection({ season, weather, occasion, mood, timeOfDay, intensityPref, longevityPref, temperature, recentPrimaryFamilies, personalBonusMap }) {
+export function buildPickerSelection({ season, weather, occasion, mood, timeOfDay, intensityPref, longevityPref, temperature, recentPrimaryFamilies, personalBonusMap, feedbackCountsMap }) {
   const isSleep = mood === "sleep" || occasion === "sleep";
   return {
     season,
@@ -90,6 +90,7 @@ export function buildPickerSelection({ season, weather, occasion, mood, timeOfDa
     temperature: typeof temperature === "number" ? temperature : undefined,
     recentPrimaryFamilies: Array.isArray(recentPrimaryFamilies) ? recentPrimaryFamilies : undefined,
     personalBonusMap: personalBonusMap || undefined,
+    feedbackCountsMap: feedbackCountsMap || undefined,
   };
 }
 
@@ -321,6 +322,7 @@ export function debugBreakdown(perfume, selection, wearMap, nowTs = Date.now()) 
     concModifier,
     diversityApplied,
     personalBonus,
+    personalFeedback: selection.feedbackCountsMap ? (selection.feedbackCountsMap[String(perfume.id)] || null) : null,
     estimatedTotal: r2(criteriaScore * agingFactor * fairnessFactor),
   };
 }

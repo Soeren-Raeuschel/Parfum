@@ -40,6 +40,166 @@ const StatistikPerfumeItem = React.memo(function StatistikPerfumeItem({ p, onSel
 });
 
 
+// ── Duft-Kalender: Monats-Heatmap der Trage-Historie (GitHub-Contributions-Stil) ──
+const HEAT_COLORS = ["#F1EFE8", "#C4E7D6", "#83CDA9", "#4BB489", "#1D9E75"];
+const WEEKDAYS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
+
+// Lokaler Tag-Schlüssel (YYYY-MM-DD), ohne UTC-Verschiebung
+function dayKeyOfDate(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function WearCalendar({ log, items, onSelectPerfume }) {
+  const now = new Date();
+  const [month, setMonth] = useState(new Date(now.getFullYear(), now.getMonth(), 1));
+  const [selDay, setSelDay] = useState(null);
+
+  // Trage-Einträge pro Tag: { "YYYY-MM-DD": [perfumeId, ...] } (Mehrfach-Tragen = mehrere Einträge)
+  const byDay = useMemo(() => {
+    const m = {};
+    log.forEach(l => {
+      const k = dayKeyOfDate(new Date(l.ts));
+      (m[k] = m[k] || []).push(String(l.id));
+    });
+    return m;
+  }, [log]);
+
+  // Schneller Zugriff auf das Parfum-Objekt per ID (als String, wie im log)
+  const perfumeById = useMemo(() => {
+    const m = {};
+    items.forEach(p => { m[String(p.id)] = p; });
+    return m;
+  }, [items]);
+
+  // Wochenraster des Monats – Spalten = Wochen, Zeilen = Wochentage (Montag startend)
+  const weeks = useMemo(() => {
+    const first = new Date(month.getFullYear(), month.getMonth(), 1);
+    const cur = new Date(first);
+    cur.setDate(1 - ((first.getDay() + 6) % 7)); // zurück zum Montag der ersten Woche
+    const out = [];
+    do {
+      const wk = [];
+      for (let i = 0; i < 7; i++) { wk.push(new Date(cur)); cur.setDate(cur.getDate() + 1); }
+      out.push(wk);
+    } while (cur.getMonth() === month.getMonth());
+    return out;
+  }, [month]);
+
+  // Maximum für die Farbskala (mind. 1, um Division durch 0 zu vermeiden)
+  const maxDay = useMemo(() => Math.max(1, ...Object.values(byDay).map(a => a.length)), [byDay]);
+  const todayKey = dayKeyOfDate(new Date());
+  const monthLabel = month.toLocaleDateString("de-DE", { month: "long", year: "numeric" });
+
+  // Trage-Einträge im angezeigten Monat (für die Kopfzeilen-Zusammenfassung)
+  const monthWearCount = useMemo(() => {
+    const prefix = `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, "0")}`;
+    return Object.entries(byDay).filter(([k]) => k.startsWith(prefix)).reduce((s, [, a]) => s + a.length, 0);
+  }, [byDay, month]);
+
+  // Düfte des gewählten Tages mit Anzahl (Duplikate zusammenfassen)
+  const selDayWears = useMemo(() => {
+    if (!selDay) return [];
+    const c = {};
+    (byDay[selDay] || []).forEach(id => { c[id] = (c[id] || 0) + 1; });
+    return Object.entries(c)
+      .map(([id, n]) => ({ p: perfumeById[id], n }))
+      .filter(x => x.p)
+      .sort((a, b) => b.n - a.n || a.p.name.localeCompare(b.p.name));
+  }, [selDay, byDay, perfumeById]);
+
+  const shiftMonth = delta => {
+    setMonth(m => new Date(m.getFullYear(), m.getMonth() + delta, 1));
+    setSelDay(null);
+  };
+
+  return (
+    <div>
+      <div className="card" style={{ marginBottom: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+          <button type="button" onClick={() => shiftMonth(-1)} style={{ ...S.btn(), padding: "4px 10px" }} aria-label="Voriger Monat">←</button>
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontSize: 14, fontWeight: 500, textTransform: "capitalize" }}>{monthLabel}</div>
+            <div style={{ fontSize: 10, color: "#888780" }}>
+              {monthWearCount === 0 ? "keine Trage-Einträge" : `${monthWearCount}× getragen`}
+            </div>
+          </div>
+          <button type="button" onClick={() => shiftMonth(1)} style={{ ...S.btn(), padding: "4px 10px" }} aria-label="Nächster Monat">→</button>
+        </div>
+
+        {/* Wochentags-Kopfzeile */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 3, marginBottom: 3 }}>
+          {WEEKDAYS.map(w => (
+            <div key={w} style={{ fontSize: 9, color: "#888780", textAlign: "center" }}>{w}</div>
+          ))}
+        </div>
+
+        {/* Heatmap-Raster: transparente Zellen für Tage außerhalb des Monats */}
+        {weeks.map((wk, wi) => (
+          <div key={wi} style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 3, marginBottom: 3 }}>
+            {wk.map(d => {
+              const inMonth = d.getMonth() === month.getMonth();
+              const k = dayKeyOfDate(d);
+              const count = (byDay[k] || []).length;
+              // Farbstufe: 0 = leer, sonst 1–4 relativ zum stärksten Tag im Zeitraum
+              const level = count === 0 ? 0 : Math.min(4, Math.ceil(count / maxDay * 4));
+              const isToday = k === todayKey;
+              const isSel = k === selDay;
+              // Tooltip: Datum + Namen der an dem Tag getragenen Düfte
+              const dayNames = [...new Set((byDay[k] || []).map(id => perfumeById[id] ? perfumeById[id].name : null))].filter(Boolean).join(", ");
+              return (
+                <button key={k} type="button" disabled={!inMonth}
+                  onClick={() => setSelDay(selDay === k ? null : k)}
+                  title={inMonth
+                    ? d.toLocaleDateString("de-DE", { day: "numeric", month: "short" }) +
+                      (count === 0 ? " – nicht getragen" : ` – ${dayNames}`)
+                    : undefined}
+                  style={{
+                    aspectRatio: "1 / 1", borderRadius: 6, padding: 0,
+                    border: isSel ? "2px solid #BA7517" : isToday ? "1px solid #BA7517" : "1px solid transparent",
+                    background: inMonth ? HEAT_COLORS[level] : "transparent",
+                    cursor: inMonth ? "pointer" : "default",
+                    fontSize: 8, color: level >= 3 ? "#fff" : "#888780",
+                    display: "flex", alignItems: "flex-end", justifyContent: "flex-end",
+                    boxSizing: "border-box",
+                  }}>
+                  {inMonth ? d.getDate() : ""}
+                </button>
+              );
+            })}
+          </div>
+        ))}
+
+        {/* Farblegende */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 4, marginTop: 8, fontSize: 9, color: "#888780" }}>
+          <span>weniger</span>
+          {HEAT_COLORS.map(c => (
+            <span key={c} style={{ width: 11, height: 11, borderRadius: 3, background: c, display: "inline-block" }} />
+          ))}
+          <span>mehr</span>
+        </div>
+      </div>
+
+      {/* Detail-Liste: Düfte des gewählten Tages */}
+      {selDay && (
+        <div className="card">
+          <div className="lbl">GETRAGEN AM {new Date(selDay).toLocaleDateString("de-DE", { weekday: "long", day: "numeric", month: "long", year: "numeric" }).toUpperCase()}</div>
+          {selDayWears.length === 0 ? (
+            <div style={{ fontSize: 12, color: "#888780", padding: "6px 0" }}>An diesem Tag wurde nichts getragen.</div>
+          ) : selDayWears.map(({ p, n }) => (
+            <div key={p.id} style={{ padding: "7px 0", borderBottom: "1px solid #F1EFE8", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <button type="button" onClick={() => onSelectPerfume && onSelectPerfume(p.id)} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontSize: 13, fontFamily: "'Georgia',serif", color: "inherit", textAlign: "left" }}>
+                {p.name}
+                <span style={{ fontSize: 11, color: "#888780", marginLeft: 6 }}>{p.house}</span>
+              </button>
+              {n > 1 && <span style={{ fontSize: 10, color: "#1D9E75" }}>×{n}</span>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Statistik tab (expanded) ──────────────────────────────────────────────────
 function StatistikTab({ items, log, onSelectPerfume }) {
   const [drill, setDrill] = useState(null);
@@ -132,6 +292,7 @@ function StatistikTab({ items, log, onSelectPerfume }) {
   const STABS = [
     { id: "profil", label: "Profil" },
     { id: "nutzung", label: "Nutzung" },
+    { id: "kalender", label: "Kalender" },
     { id: "noten", label: "Noten" },
     { id: "favoriten", label: "Favoriten" },
   ];
@@ -305,6 +466,10 @@ function StatistikTab({ items, log, onSelectPerfume }) {
             </div>
           )}
         </div>
+      )}
+
+      {statsTab === "kalender" && (
+        <WearCalendar log={log} items={items} onSelectPerfume={onSelectPerfume} />
       )}
 
       {statsTab === "noten" && (
