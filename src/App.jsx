@@ -54,6 +54,7 @@ const DeclutterTab = lazy(() => import("./tabs/DeclutterTab"));
 const EinstellungenTab = lazy(() => import("./tabs/EinstellungenTab"));
 const OnboardingModal = lazy(() => import("./tabs/OnboardingModal"));
 const SammlungTab = lazy(() => import("./tabs/SammlungTab"));
+const ReiseTab = lazy(() => import("./tabs/ReiseTab"));
 // DetailView (gleicher Chunk wie SammlungTab) ebenfalls lazy – schrumpft den
 // Main-Bundle-Graph: Overlay wird erst beim Öffnen geladen
 const DetailView = lazy(() => import("./tabs/SammlungTab").then(m => ({ default: m.DetailView })));
@@ -1635,6 +1636,7 @@ state.items.filter(p => p.format === "Flakon" && state.fillLevels[p.id] !== unde
 
   const TABS = [
 { id: "heute", l: "HEUTE", i: "☀" },
+{ id: "reise", l: "REISE", i: "→" },
 { id: "sammlung", l: "SAMMLUNG", i: "✦" },
 { id: "statistik", l: "STATISTIK", i: "◉" },
 { id: "ordner", l: "ORDNER", i: "▤" },
@@ -1644,9 +1646,22 @@ state.items.filter(p => p.format === "Flakon" && state.fillLevels[p.id] !== unde
 { id: "settings", l: "SETTINGS", i: "⚙" },
   ];
 
+  // Mobile Bottom-Bar: primäre Tabs; alle anderen landen im "Mehr"-Sheet
+  const PRIMARY_TABS = ["heute", "sammlung", "reise", "wunschliste"];
+  const moreBadgeCount = TABS.filter(t => !PRIMARY_TABS.includes(t.id))
+    .reduce((n, t) => n + (t.badge || 0), 0);
+  // Zentrale Navigation: Detail schließen, Back-Stack pflegen, Tab wechseln
+  const navigateTo = id => {
+    if (!TABS.some(t => t.id === id)) return;
+    dispatch({ type: 'SET_DETAIL', payload: null });
+    dispatch({ type: 'SET_BACK_STACK', payload: s => [...s, state.tab].slice(-10) });
+    dispatch({ type: 'SET_TAB', payload: id });
+  };
+
   // App-level detail overlay state
   const appDetailPerfume = state.detail ? state.items.find(x => x.id === state.detail) || null : null;
   const appDetailRef = useRef(null);
+  const [showMore, setShowMore] = useState(false);
   useBodyLock(!!appDetailPerfume || state.showOnboard);
 
   if (!state.loaded) return (
@@ -1698,9 +1713,7 @@ state.items.filter(p => p.format === "Flakon" && state.fillLevels[p.id] !== unde
       onChange={index => {
         const t = TABS[index];
         if (!t) return;
-        dispatch({ type: 'SET_DETAIL', payload: null });
-        dispatch({ type: 'SET_BACK_STACK', payload: s => [...s, state.tab].slice(-10) });
-        dispatch({ type: 'SET_TAB', payload: t.id });
+        navigateTo(t.id);
       }}
     >
       <Tab.List as="nav" className="tabs" aria-label="Hauptnavigation">
@@ -1725,6 +1738,10 @@ state.items.filter(p => p.format === "Flakon" && state.fillLevels[p.id] !== unde
           pushError={pushError} prefs={state.prefs} priceMl={state.priceMl}
           userNotePrefs={state.userNotePrefs} userFamilyPrefs={state.userFamilyPrefs}
           onNavigate={id => dispatch({ type: 'SET_TAB', payload: id })}
+          onSelectPerfume={id => { dispatch({ type: 'SET_DETAIL', payload: null }); dispatch({ type: 'SET_BACK_STACK', payload: s => [...s, state.tab].slice(-10) }); dispatch({ type: 'SET_DETAIL', payload: id }); }} />
+      )}
+      {state.tab === "reise" && (
+        <ReiseTab items={state.items}
           onSelectPerfume={id => { dispatch({ type: 'SET_DETAIL', payload: null }); dispatch({ type: 'SET_BACK_STACK', payload: s => [...s, state.tab].slice(-10) }); dispatch({ type: 'SET_DETAIL', payload: id }); }} />
       )}
       {state.tab === "sammlung" && (
@@ -1764,10 +1781,47 @@ state.items.filter(p => p.format === "Flakon" && state.fillLevels[p.id] !== unde
     </main>
   </PullToRefresh>
 
+  {/* Mobile Bottom Navigation: nur unter 768px sichtbar (CSS-Steuerung) */}
+  <nav className="bottomnav" aria-label="Mobile Hauptnavigation">
+    {TABS.filter(t => PRIMARY_TABS.includes(t.id)).map(t => (
+      <button key={t.id} className={`btab${state.tab === t.id ? " active" : ""}`}
+        onClick={() => navigateTo(t.id)}
+        aria-current={state.tab === t.id ? "page" : undefined}>
+        <span className="btab-icon">{t.i}</span>
+        <span className="btab-label">{t.l}</span>
+        {t.badge && <span className="btab-badge">{t.badge}</span>}
+      </button>
+    ))}
+    {/* "Mehr"-Button: aktiv markiert, wenn gerade ein Sekundär-Tab offen ist */}
+    <button className={`btab${!PRIMARY_TABS.includes(state.tab) ? " active" : ""}`}
+      onClick={() => setShowMore(true)} aria-expanded={showMore}>
+      <span className="btab-icon">⋯</span>
+      <span className="btab-label">MEHR</span>
+      {moreBadgeCount > 0 && <span className="btab-badge">{moreBadgeCount}</span>}
+    </button>
+  </nav>
+
+  {/* "Mehr"-Bottom-Sheet: Sekundär-Tabs (Statistik, Ordner, Layering, Vergessen, Settings) */}
+  {showMore && (
+    <div className="moresheet-overlay" onClick={() => setShowMore(false)}>
+      <div className="moresheet" role="dialog" aria-label="Weitere Bereiche" onClick={e => e.stopPropagation()}>
+        <div className="moresheet-handle" />
+        {TABS.filter(t => !PRIMARY_TABS.includes(t.id)).map(t => (
+          <button key={t.id} className={`moreitem${state.tab === t.id ? " active" : ""}`}
+            onClick={() => { setShowMore(false); navigateTo(t.id); }}>
+            <span className="moreitem-icon">{t.i}</span>
+            <span className="moreitem-label">{t.l}</span>
+            {t.badge && <span className="moreitem-badge">{t.badge}</span>}
+          </button>
+        ))}
+      </div>
+    </div>
+  )}
+
   {/* App-level detail overlay: für Statistik, Heute, Ordner, Declutter, Wunschliste */}
   {appDetailPerfume && (
     <Suspense fallback={null}>
-    <div ref={appDetailRef} style={{ position: "fixed", inset: 0, background: "#FAFAF8", zIndex: 9000, overflowY: "auto", WebkitOverflowScrolling: "touch", overscrollBehavior: "contain", animation: "slideInRight .28s cubic-bezier(0.25,0.46,0.45,0.94) both", padding: 16, paddingTop: "calc(16px + env(safe-area-inset-top))", paddingBottom: "calc(56px + env(safe-area-inset-bottom))" }}>
+    <div ref={appDetailRef} style={{ position: "fixed", inset: 0, background: "#FAFAF8", zIndex: 9000, overflowY: "auto", WebkitOverflowScrolling: "touch", overscrollBehavior: "contain", animation: "slideInRight .28s cubic-bezier(0.25,0.46,0.45,0.94) both", padding: 16, paddingTop: "calc(16px + env(safe-area-inset-top))", paddingBottom: "calc(90px + env(safe-area-inset-bottom))" }}>
       <DetailView perfume={appDetailPerfume} items={state.items} log={state.log} notes={state.notes}
         onClose={() => dispatch({ type: 'SET_DETAIL', payload: null })} onDelete={handleDelete}
         onUpdate={handleUpdate} onSaveNote={handleSaveNote} onLog={handleLog}
