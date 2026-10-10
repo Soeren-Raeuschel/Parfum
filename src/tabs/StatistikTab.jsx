@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef, lazy, Suspense } from "react";
+import React, { useState, useMemo, lazy, Suspense } from "react";
 import { S, MiniBar, FamilyPill, Stars } from "../shared/ui";
 import { FAM_COLORS, getSeasonColor } from "../shared/constants";
 import { splitNotes } from "../utils/helpers";

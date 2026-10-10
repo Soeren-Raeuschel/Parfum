@@ -302,13 +302,13 @@ async function fetchBrandInfo(brand) {
       temperature: 0.4, max_tokens: 120,
       cacheKey: "brand:" + key,
     });
-    if (text && text.length > 15) {
-      const result = { text, url: null };
-      _wikiCache[key] = result;
-      return result;
-    }
-    _wikiCache[key] = null;
-    return null;
+    // Einmalige Zuweisung nach dem await (vermeidet require-atomic-updates-Race)
+    const value = (text && text.length > 15) ? { text, url: null } : null;
+    // Kein echtes Race: Der Cache wird bewusst nach dem await gesetzt,
+    // der Schlüssel ist pro Marke eindeutig und nur der letzte Wert zählt.
+    // eslint-disable-next-line require-atomic-updates
+    _wikiCache[key] = value;
+    return value;
   } catch(err) {
     // Nur bei dauerhaften Fehlern (kein Key, 404) cachen – nicht bei Rate-Limit oder Netzwerk
     const msg = err?.message || "";
@@ -456,12 +456,12 @@ Keine allgemeinen Aussagen über die Marke. Keine Wiederholung der Noten-Liste. 
       temperature: 0.7, max_tokens: 180,
       cacheKey: "facts2:" + key.slice(0, 80),
     });
-    if (text && text.length > 20) {
-      _factsCache[key] = text;
-      return text;
-    }
-    _factsCache[key] = null;
-    return null;
+    // Einmalige Zuweisung nach dem await (vermeidet require-atomic-updates-Race)
+    const value = (text && text.length > 20) ? text : null;
+    // Kein echtes Race: bewusstes Cache-Setzen nach dem await (s. _wikiCache oben).
+    // eslint-disable-next-line require-atomic-updates
+    _factsCache[key] = value;
+    return value;
   } catch(err) {
     const msg = err?.message || "";
     const isPermanent = msg.includes("API-Schlüssel") || msg.includes("API-Key") || msg.includes("401");
@@ -601,12 +601,6 @@ function FunFactsCard({ name, house, top, middle, base, conc, family, season, ge
 // ══════════════════════════════════════════════════════════════════════════════
 // FEATURE: SPOTIFY CARD
 // ══════════════════════════════════════════════════════════════════════════════
-function getSpotifyEmbedUrl(url) {
-  if (!url) return null;
-  const m = url.match(/open\.spotify\.com\/(track|playlist|album|artist)\/([a-zA-Z0-9]+)/);
-  if (!m) return null;
-  return `https://open.spotify.com/embed/${m[1]}/${m[2]}?utm_source=generator&theme=0`;
-}
 function getSpotifyOpenUrl(url) {
   if (!url) return null;
   const m = url.match(/open\.spotify\.com\/(track|playlist|album|artist)\/([a-zA-Z0-9]+)/);
@@ -727,7 +721,6 @@ function NotesEditModal({ perfume, onClose, onUpdate, onSaveNote, localNotes, on
               <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: 8 }}>
                 {local.families.map((fam, idx) => {
                   const col = FAM_COLORS[fam] || "#534AB7";
-                  const priorityLabel = idx === 0 ? "1. Hauptfamilie" : idx === 1 ? "2. Nebenfamilie" : "3. weitere";
                   const weights = ["1.0×", "0.5×", "0.25×"];
                   return (
                     <div key={fam} style={{ display: "flex", alignItems: "center", gap: 3, background: col + "18", border: `1px solid ${col}`, borderRadius: 16, padding: "3px 8px 3px 4px" }}>
@@ -1392,7 +1385,6 @@ function SammlungTab({ items, log, notes, onDelete, onUpdate, onExport, onSaveNo
   const [exportToast, setExportToast] = useState("");
   const [showMigrationModal, setShowMigrationModal] = useState(false);
   const inputRef = useRef(null);
-  const sammlungDetailRef = useRef(null);
 
   function showExportToast(msg) {
     setExportToast(msg);
@@ -1551,7 +1543,7 @@ function SammlungTab({ items, log, notes, onDelete, onUpdate, onExport, onSaveNo
 
       {/* Supabase-Migrations-Dialog (Login + Upload) */}
       <SupabaseMigrationModal open={showMigrationModal} onClose={() => setShowMigrationModal(false)}
-        items={items} wishlist={wishlist} notes={notes} fillLevels={fillLevels} priceMl={priceMl} />
+        items={items} wishlist={wishlist} notes={notes} fillLevels={fillLevels} priceMl={priceMl} log={log} />
 
       {/* Search input */}
       <div style={{ position: "relative", marginBottom: 8 }}>

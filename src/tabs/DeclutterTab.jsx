@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useMemo } from "react";
-import { Tab, Dialog } from "@headlessui/react";
+import { useState, useEffect, useMemo } from "react";
+import { Dialog } from "@headlessui/react";
 import { S } from "../shared/ui";
 import { getDeclutterSuggestions, DECLUTTER_DAYS, FORGOTTEN_NEW_DELAY_DAYS } from "../shared/declutter";
 
-function DeclutterTab({ items, log, onDelete, onSelectPerfume, onUpdate, declutterStatus, onSaveDeclutterStatus }) {
+function DeclutterTab({ items, log, onDelete, onSelectPerfume, declutterStatus, onSaveDeclutterStatus }) {
   const [filter, setFilter] = useState("all");
   const [dismissed, setDismissed] = useState(new Set());
   const [declDisplayCount, setDeclDisplayCount] = useState(15);

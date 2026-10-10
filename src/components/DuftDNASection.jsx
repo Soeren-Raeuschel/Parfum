@@ -216,7 +216,7 @@ function DuftDNAChart({ dna }) {
 
       {/* Legende: Top 8 als horizontale Bars */}
       <div style={{ marginTop: 12, padding: "0 4px" }}>
-        {sorted.filter(d => d.value >= 0.01).slice(0, 8).map((d, i) => (
+        {sorted.filter(d => d.value >= 0.01).slice(0, 8).map(d => (
           <div key={d.id} style={{
             display: "flex", alignItems: "center", gap: 8, marginBottom: 5,
           }}>

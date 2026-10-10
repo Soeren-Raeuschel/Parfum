@@ -1,11 +1,9 @@
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useMemo } from "react";
 import { Combobox } from "@headlessui/react";
 import { S } from "../shared/ui";
 import { splitNotes } from "../utils/helpers";
-import { stripDiacritics } from "../utils/perfumeMatch";
 import { NOTE_TO_CAT, FAM_COLORS, primaryFamily } from "../shared/constants";
 import { LAYERING_COMPAT, getLayerCompat, analyzeNoteCompat, notesMatch, normNote } from "../shared/layering";
-import { triggerSprayAnimation } from "../shared/spray";
 
 
 function LayeringPerfumeSelect({ label, inputId, search, setSearch, filtered, selected, setSelected, items }) {
@@ -212,7 +210,6 @@ function computeSmartScore(inputFamilies, inputNotes, inputTop, inputMiddle, inp
     : Math.min(1, (sharedCount / maxPossible) + (bridgeCount * 0.05));
 
   // ── GESAMTSCORE ──────────────────────────────────────────────────────────
-  const W_FAM  = 0.40;
   const W_CAT  = 0.35;
   const W_NOTE = 0.25;
   // Wenn keine Noten-Daten vorhanden: Gewicht auf Familien verschieben

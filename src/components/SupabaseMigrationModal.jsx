@@ -5,14 +5,14 @@
  * Lokale Daten (localStorage) bleiben unverändert als Backup.
  */
 
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import ReactDOM from "react-dom";
 import { Dialog } from "@headlessui/react";
 import { S } from "../shared/ui";
 import { isSupabaseConfigured } from "../lib/supabase";
 import { signInWithPassword, getCurrentUser, signOutUser, migrateCollectionToSupabase } from "../utils/supabaseSync";
 
-export default function SupabaseMigrationModal({ open, onClose, items, wishlist, notes, fillLevels, priceMl }) {
+export default function SupabaseMigrationModal({ open, onClose, items, wishlist, notes, fillLevels, priceMl, log }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [user, setUser] = useState(null);

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import { useState } from "react";
 import { S, useBodyLock } from "../shared/ui";
 import { ONBOARD_STYLES } from "../data/localAdapter";
 

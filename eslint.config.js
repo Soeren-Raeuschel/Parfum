@@ -13,6 +13,7 @@ export default [
   // typische Laufzeit-Crasher ab, bevor sie auf dem Gerät passieren.
   js.configs.recommended,
   security.configs.recommended,
+  // Fix: Basis-Regelwerk (enthält u. a. no-undef, no-dupe-keys, no-unreachable,
   {
     languageOptions: {
       ecmaVersion: 2022,
@@ -75,6 +76,20 @@ export default [
       // hier nicht erkennbar; die ~80 Fehlalarme überdeckten sonst alle
       // relevanten Security-Hinweise.
       "security/detect-object-injection": "off"
+    }
+  },
+  // Fix: .jsx-Dateien werden von der Flat Config sonst gar nicht gelintet
+  // (Default-Match ist nur *.js/*.mjs) – undefinierte Variablen wie der
+  // "Can't find variable: log"-Bug blieben dadurch unsichtbar.
+  {
+    files: ["src/**/*.jsx"],
+    languageOptions: {
+      parserOptions: { ecmaFeatures: { jsx: true } },
+    },
+    rules: {
+      // JSX-Verwendung (z. B. <Dialog />) wird vom ESLint-Kern ohne React-Plugin
+      // nicht als Variablen-Nutzung erkannt -> Fehlalarme. Deshalb hier nur Warnung.
+      "no-unused-vars": "warn"
     }
   }
 ];

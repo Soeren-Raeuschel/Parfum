@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import { useState } from "react";
 import ReactDOM from "react-dom";
 import { S, useBodyLock } from "../shared/ui";
-import { WISH_PRIOS, SEASON_COLORS, FAM_COLORS, validateParfumoLookupUrl, extrahiereBrandName } from "../shared/constants";
+import { WISH_PRIOS, validateParfumoLookupUrl, extrahiereBrandName } from "../shared/constants";
 import { newId } from "../data/localAdapter";
-import { ladeParfumdaten } from "../utils/parfumoLookup";
+import { ladeParfumdaten, lookupByUrl } from "../utils/parfumoLookup";
 
 // ── Wunschliste detail portal (renders into document.body to escape tab stacking context) ──
 function WishDetailPortal({ selectedWish, wishDetails, loadingDetails, items, prioLabels, moveToCollection, setSelectedWish, setWishDetails }) {
@@ -147,7 +147,7 @@ function WishEmptyState() {
 }
 
 // ── Wunschliste tab ───────────────────────────────────────────────────────────
-function WunschlisteTab({ wishlist, onSave, items, onAddToCollection, onSelectPerfume, wishDetailsCache, setWishDetailsCache }) {
+function WunschlisteTab({ wishlist, onSave, items, onAddToCollection, wishDetailsCache, setWishDetailsCache }) {
   const [form, setForm] = useState({ name: "", house: "", url: "", prio: 2, note: "" });
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");

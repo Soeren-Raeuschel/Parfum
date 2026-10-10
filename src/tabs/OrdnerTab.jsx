@@ -153,7 +153,6 @@ function OrdnerTab({ items, onSelectPerfume }) {
   const [openL1, setOpenL1] = useState({});
   const [openL2, setOpenL2] = useState({});
   const [searchFilt, setSearch] = useState("");
-  const [showPrint, setShowPrint] = useState(false);
 
   // Nur Proben (kein Flakon) in der physischen Ordnerstruktur
   const probenItems = useMemo(() => items.filter(p => p.format !== "Flakon"), [items]);

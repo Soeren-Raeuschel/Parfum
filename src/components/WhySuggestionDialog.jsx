@@ -4,7 +4,6 @@
  * (Kriterien, Aging, Fairness, persönlicher Bonus aus der Lernschleife usw.),
  * basierend auf debugBreakdown aus der Picker-Engine.
  */
-import React from "react";
 import { Dialog } from "@headlessui/react";
 import { debugBreakdown } from "../picker/todayIntegration";
 import { FEEDBACK_BONUS_MAX } from "../picker/wearStore";

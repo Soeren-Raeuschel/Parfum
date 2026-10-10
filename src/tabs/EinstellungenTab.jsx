@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { Disclosure, Dialog } from "@headlessui/react";
 import { S } from "../shared/ui";
 import { FAMILIES, FAM_COLORS, NOTE_CATEGORIES, NOTE_CAT_COLORS, SEASONS, validateParfumoLookupUrl, extrahiereBrandName } from "../shared/constants";

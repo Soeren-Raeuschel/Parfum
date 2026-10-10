@@ -10,7 +10,7 @@
  *  - "Anderer Vorschlag" pro Flakon (excludeIds dieser Sitzung) + Reset
  *  - Set-Zusammenfassung als Text zum Kopieren
  */
-import React, { useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { S, MiniBar, FamilyPill } from "../shared/ui";
 import { FAM_COLORS } from "../shared/constants";
 import { WEATHERS, OCCASIONS, INTENSITIES, LONGEVITIES, getSeason } from "../picker/legacyScoring";

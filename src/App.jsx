@@ -1,16 +1,12 @@
 // Chart.js wird lazy geladen (siehe loadChart unten) → kleinerer Initial-Bundle
 import React, { useState, useEffect, useMemo, useCallback, useRef, useReducer, lazy, Suspense } from "react";
-import { Combobox, Dialog, Disclosure, Tab } from "@headlessui/react";
+import { Dialog, Tab } from "@headlessui/react";
 import { storage } from "./data/storage";
-import { newId, sanitizePerfume, ONBOARD_STYLES } from "./data/localAdapter"; // Fix: newId/sanitizePerfume/ONBOARD_STYLES wurden verwendet, aber nicht importiert (lokale Definitionen waren auskommentiert)
-import { List as FixedSizeListVirtual, useDynamicRowHeight } from "react-window";
-import { AppError, recordError, InvalidResponseError, ApiError, NetworkError, RateLimitError } from "./utils/errorHandler"; // Fix: ApiError/NetworkError/RateLimitError wurden in groqFetch verwendet, aber nicht importiert → "Can't find variable: ApiError"
-import { FileUpload } from "./components/ui/file-upload";
-import EvolveCard from "./components/EvolveCard";
+import { sanitizePerfume, ONBOARD_STYLES } from "./data/localAdapter"; // Fix: sanitizePerfume/ONBOARD_STYLES wurden verwendet, aber nicht importiert (lokale Definitionen waren auskommentiert)
 import WhySuggestionDialog from "./components/WhySuggestionDialog";
 import { AiSparkle } from "./components/AiSparkle";
 import { splitNotes } from "./utils/helpers";
-import { stripDiacritics, normalizeText, tokenizeText } from "./utils/perfumeMatch"; // Fix: normalizeText/stripDiacritics/tokenizeText wurden verwendet, aber nicht importiert → "Can't find variable: normalizeText"
+import { normalizeText, tokenizeText } from "./utils/perfumeMatch"; // Fix: normalizeText/tokenizeText wurden verwendet, aber nicht importiert → "Can't find variable: normalizeText"
 
 import { getWearMap, recordWear, recordFeedback, feedbackContextKey, getPersonalBonusMap, getFeedbackCountsMap } from "./picker/wearStore";
 import { PICKER_CONFIG } from "./picker/pickerConfig";
@@ -21,7 +17,6 @@ import {
   chipMatchCounts,
   debugBreakdown,
   getSprayGuide,
-  CHIP_GOOD_THRESHOLD,
   CHIP_DIM_COUNT,
   KASSEL_COORDS,
 } from "./picker/todayIntegration";
@@ -29,9 +24,7 @@ import {
 import { S, FamilyPill, MiniBar, Stars, useBodyLock, TabSkeleton } from "./shared/ui";
 import { triggerSprayAnimation } from "./shared/spray";
 import {
-  KEYS, SEASON_COLORS, FAM_COLORS, NOTE_TAGS, WISH_PRIOS, getSeasonColor,
-  FAMILIES, SEASONS, NOTE_CATEGORIES, NOTE_CAT_COLORS, CONC_COLORS, NOTE_TO_CAT,
-  validateParfumoLookupUrl, extrahiereBrandName, primaryFamily,
+  KEYS, SEASON_COLORS, FAM_COLORS,
 } from "./shared/constants";
 import { getDeclutterSuggestions } from "./shared/declutter";
 // ── Ausgelagerte Module (Hooks, IO, Groq, Sammlung) ──────────────────────
@@ -42,7 +35,6 @@ import { groqFetch, useGroqCountdown } from "./utils/groqClient";
 import { cachedFetch } from "./utils/apiCache";
 import {
   getSeason, MOODS, TIMES, WEATHERS, OCCASIONS, INTENSITIES, LONGEVITIES,
-  FAMILY_CONTEXT,
 } from "./picker/legacyScoring";
 
 // ── Lazy geladene Ansichten (Code-Splitting: eine Ansicht = ein Chunk) ──────
@@ -75,72 +67,9 @@ const DetailView = lazy(() => import("./tabs/SammlungTab").then(m => ({ default:
 // (nicht pro Tastendruck). Damit ist das Signal zum Zeitpunkt des Sucheffekts
 // garantiert gültig und nicht bereits vom Cleanup des vorherigen Laufs abgebrochen.
 function safeParseJSON(raw, fallback) {
-  if (raw == null || raw === "") return fallback;
+  if (raw === null || raw === undefined || raw === "") return fallback;
   try { return JSON.parse(raw); } catch { return fallback; }
 }
-function hydrateArray(raw, fallback) {
-  const v = safeParseJSON(raw, fallback);
-  return Array.isArray(v) ? v : fallback;
-}
-function hydrateObject(raw, fallback) {
-  const v = safeParseJSON(raw, fallback);
-  return v && typeof v === "object" && !Array.isArray(v) ? v : fallback;
-}
-function hydrateItems(raw) {
-  return hydrateArray(raw, [])
-    .filter(x => x && typeof x === "object")
-    .map(sanitizePerfume)
-    .filter(x => x.name);
-}
-function hydrateLog(raw) {
-  return hydrateArray(raw, []).filter(x => x && typeof x === "object" && typeof x.ts === "number").slice(-1000);
-}
-function hydrateWishlist(raw) {
-  return hydrateArray(raw, []).filter(x => x && typeof x === "object" && typeof x.name === "string");
-}
-function hydrateNotes(raw) {
-  const o = safeParseJSON(raw, null);
-  if (!o || typeof o !== "object" || Array.isArray(o)) return {};
-  const out = {};
-  for (const k of Object.keys(o)) {
-    if (k === "__proto__" || k === "constructor" || k.length > 200) continue;
-    out[k] = o[k];
-  }
-  return out;
-}
-function hydrateFillLevels(raw) {
-  const o = hydrateObject(raw, {});
-  const out = {};
-  for (const [k, v] of Object.entries(o)) {
-    if (typeof k === "string" && k.length < 200 && typeof v === "number" && [100, 75, 50, 25, 0].includes(v)) out[k] = v;
-  }
-  return out;
-}
-function hydratePriceMl(raw) {
-  const o = hydrateObject(raw, {});
-  const out = {};
-  for (const [k, v] of Object.entries(o)) {
-    if (typeof k === "string" && k.length < 200 && v && typeof v === "object") {
-      const price = Number(v.price);
-      const ml = Number(v.ml);
-      if (Number.isFinite(price) && price >= 0 && Number.isFinite(ml) && ml > 0) {
-        out[k] = { price, ml };
-      }
-    }
-  }
-  return out;
-}
-function hydratePrefs(raw) {
-  const o = hydrateObject(raw, { appName: "Sillage" });
-  const name = typeof o.appName === "string" ? o.appName.slice(0, 80) : "Sillage";
-  return { ...o, appName: name || "Sillage" };
-}
-/*function newId() {
-  try {
-    if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
-  } catch { }
-  return "id_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 12);
-}*/
 function buildPromptContext(params) {
   const {
     occasion, mood, timeOfDay, weather, season,
@@ -229,7 +158,7 @@ async function withRetry(fn, maxAttempts = 3, baseDelay = 1000) {
     try { return await fn(); }
     catch (e) {
       lastErr = e;
-      if (i < maxAttempts - 1) await new Promise(r => setTimeout(r, baseDelay * Math.pow(2, i)));
+      if (i < maxAttempts - 1) await new Promise(r => { setTimeout(r, baseDelay * Math.pow(2, i)); });
     }
   }
   throw lastErr;
@@ -458,8 +387,9 @@ async function fetchAutoWeather(forcePrompt = false) {
           showToast("Standort ist im Browser blockiert – in den Seiten-Berechtigungen erlauben und erneut klicken");
         } else {
           try {
-            const pos = await new Promise((res, rej) =>
-              navigator.geolocation.getCurrentPosition(res, rej, { timeout: 8000 }));
+            const pos = await new Promise((res, rej) => {
+              navigator.geolocation.getCurrentPosition(res, rej, { timeout: 8000 });
+            });
             lat = pos.coords.latitude;
             lon = pos.coords.longitude;
             writeGeoPermission("granted");
@@ -518,9 +448,9 @@ async function fetchAutoWeather(forcePrompt = false) {
   const [aiLoading, setAiLoading] = useState(false);
   const [aiErr, setAiErr] = useState("");
   const interpretationCache = useRef(new Map()); // Cache for AI interpretation results to avoid duplicate Groq calls
+  const INTERPRETATION_CACHE_TTL = 5 * 60 * 1000; // 5 Minuten (analog apiCache.js)
   const tog = k => setOpen(o => ({ ...o, [k]: !o[k] }));
   const groqCountdownVal = useGroqCountdown(); // Sekunden bis Rate-Limit abläuft
-   const [reasoningChars, setReasoningChars] = useState(0); // Zeichenzähler für KI-Reasoning-Validierung
 
   useEffect(() => {
     const h = new Date().getHours();
@@ -533,7 +463,6 @@ async function fetchAutoWeather(forcePrompt = false) {
   // Der Button bleibt als manuelle Nachlade-Möglichkeit erhalten.
   useEffect(() => {
     fetchAutoWeather();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
 
@@ -541,7 +470,7 @@ async function fetchAutoWeather(forcePrompt = false) {
     // Cache layer for interpreted results to avoid duplicate Groq calls
     const cacheKey = `interpret_${text}_${season}_${weather}_${occasion}_${mood}_${timeOfDay}_${intensityPref}_${longevityPref}_${priceRange || 'null'}_${genderPref || 'null'}`;
     const cachedInterpretation = interpretationCache.current.get(cacheKey);
-    if (cachedInterpretation && Date.now() - cachedInterpretation.timestamp < CACHE_TTL) {
+    if (cachedInterpretation && Date.now() - cachedInterpretation.timestamp < INTERPRETATION_CACHE_TTL) {
       console.log('INFO', 'Using cached interpretation result');
       return cachedInterpretation.data;
     }
@@ -640,13 +569,6 @@ Antworte NUR mit JSON: {"occasion":"...","mood":"...","timeOfDay":"...","intensi
   }
 
   const generateTimerRef = useRef(null);
-
-// ── Memoized recommendation context: only recomputes when core inputs change ────
-const recCtx = useMemo(() => {
-  const effectiveIntensity = (mood === "sleep" || occasion === "sleep") ? "light" : intensityPref;
-  const effectiveLongevity = (mood === "sleep" || occasion === "sleep") ? "short" : longevityPref;
-  return { season, weather, occasion, mood, timeOfDay, intensityPref: effectiveIntensity, longevityPref: effectiveLongevity, log, userNotePrefs, userFamilyPrefs, priceRange, genderPref, priceMl };
-}, [season, weather, occasion, mood, timeOfDay, intensityPref, longevityPref, log, userNotePrefs, userFamilyPrefs, priceRange, genderPref, priceMl]);
 
   // ── Teil 3: Empfehlung über die neue Picker-Engine (pickPerfume) ──
   // excludeExtra: zusätzliche IDs für "Anderer Vorschlag" (state-Update + Draw
@@ -831,7 +753,6 @@ const recCtx = useMemo(() => {
     const fc = FAM_COLORS[p.family] || "#888";
     const families = p.families && p.families.length > 0 ? p.families : (p.family ? [p.family] : []);
     const familyDisplay = families.length > 0 ? families.join(", ") : "Sonstiges";
-    const familyColor = families.length > 0 ? FAM_COLORS[families[0]] || "#888" : "#888";
     const reason = buildSuggestionReason(
       p,
       recs && recs._selection ? recs._selection : buildPickerSelection({ season, weather, occasion, mood, timeOfDay, intensityPref, longevityPref, temperature }),
@@ -1353,78 +1274,6 @@ function normalizeTerm(raw) {
   return SYNONYMS[t] || t;
 }
 
-// Parse query string into normalized terms (split on whitespace or comma)
-function parseQuery(q) {
-  return q.split(/[\s,]+/).map(t => t.trim()).filter(Boolean).map(normalizeTerm);
-}
-
-// Get all normalized note tokens for a perfume
-function perfumeNoteTokens(p) {
-  const allNotes = [...splitNotes(p.top), ...splitNotes(p.middle), ...splitNotes(p.base)];
-  return allNotes.map(n => normalizeTerm(n));
-}
-
-// Core match function: returns {matched: bool, hits: [{field, value}]}
-// Every term must match at least one field (AND logic)
-function matchPerfume(p, terms) {
-  if (!terms.length) return { matched: true, hits: [] };
-  const nameNorm = normalizeTerm(p.name || "");
-  const houseNorm = normalizeTerm(p.house || "");
-  const familyNorm = normalizeTerm(p.family || "");
-  const nameTokens = tokenizeText(p.name || "").map(normalizeTerm);
-  const houseTokens = tokenizeText(p.house || "").map(normalizeTerm);
-  const noteCache = [["top", p.top], ["middle", p.middle], ["base", p.base]].map(([field, raw]) => {
-    const notes = splitNotes(raw || "");
-    return { field, notes, normNotes: notes.map(n => normalizeTerm(n)) };
-  });
-  const hits = [];
-  for (const term of terms) {
-    let termHit = false;
-    // Name
-    if (nameNorm.includes(term) || nameTokens.some(t => t.startsWith(term))) {
-      hits.push({ field: "name", value: p.name, term });
-      termHit = true;
-    }
-    // House
-    if (!termHit && (houseNorm.includes(term) || houseTokens.some(t => t.startsWith(term)))) {
-      hits.push({ field: "house", value: p.house, term });
-      termHit = true;
-    }
-    // Notes (top / middle / base)
-    if (!termHit) {
-      for (const block of noteCache) {
-        for (let i = 0; i < block.notes.length; i++) {
-          const note = block.notes[i];
-          const noteNorm = block.normNotes[i];
-          if (noteNorm.includes(term)) {
-            hits.push({ field: block.field, value: note, term });
-            termHit = true;
-            break;
-          }
-        }
-        if (termHit) break;
-      }
-    }
-    // Family
-    if (!termHit && familyNorm.includes(term)) {
-      hits.push({ field: "family", value: p.family, term });
-      termHit = true;
-    }
-    if (!termHit) return { matched: false, hits: [] };
-  }
-  return { matched: true, hits };
-}
-
-// Collect all unique notes from collection, sorted by frequency
-function getAllNotes(items) {
-  const c = {};
-  items.forEach(p => {
-    [...splitNotes(p.top), ...splitNotes(p.middle), ...splitNotes(p.base)]
-      .forEach(n => { const k = n.trim(); if (k) c[k] = (c[k] || 0) + 1; });
-  });
-  return Object.entries(c).sort((a, b) => b[1] - a[1]).map(([n]) => n);
-}
-
 // ══════════════════════════════════════════════════════════════════════════════
 // FEATURE: COST PER WEAR
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1517,12 +1366,6 @@ backStack: [], detail: null, showOnboard: false,
   const savePriceMl = useCallback(async n => { dispatch({ type: 'SET_PRICE_ML', payload: n }); try { await storage.savePriceMl(n); } catch (e) { pushError(e); } }, [pushError]);
 
   // Debounced versions for frequent updates (500ms delay)
-  const saveItemsDebounced = useMemo(() => debounce(async n => {
-try { await storage.saveItems(n); } catch (e) { pushError(e); }
-  }, 500), [pushError]);
-  const saveLogDebounced = useMemo(() => debounce(async n => {
-try { await storage.saveLog(n); } catch (e) { pushError(e); }
-  }, 500), [pushError]);
   const saveNotesDebounced = useMemo(() => debounce(async n => {
 try { await storage.saveNotes(n); } catch (e) { pushError(e); }
   }, 500), [pushError]);
@@ -1554,25 +1397,6 @@ dispatch({ type: 'SET_LOG', payload: next });
 // user closes the app within the 500 ms debounce window.
 try { localStorage.setItem(KEYS.log, JSON.stringify(next)); } catch { }
 dispatch({ type: 'SET_TOAST', payload: { msg: "✓ Getragen", show: true } });
-setTimeout(() => dispatch({ type: 'SET_TOAST', payload: { msg: "", show: false } }), 2000);
-  }, [state.log]);
-  // Undo: removes the last log entry (for user mistakes)
-  const handleUndoLog = useCallback(() => {
-if (state.log.length === 0) return;
-const next = state.log.slice(0, -1);
-dispatch({ type: 'SET_LOG', payload: next });
-try { localStorage.setItem(KEYS.log, JSON.stringify(next)); } catch { }
-dispatch({ type: 'SET_TOAST', payload: { msg: "✕ Letzter Eintrag entfernt", show: true } });
-setTimeout(() => dispatch({ type: 'SET_TOAST', payload: { msg: "", show: false } }), 2000);
-  }, [state.log]);
-  // Replay: re-logs the last entry (for accidental undo)
-  const handleReplayLog = useCallback(() => {
-if (state.log.length === 0) return;
-const last = state.log[state.log.length - 1];
-const next = [...state.log, { id: last.id, ts: Date.now() }].slice(-1000);
-dispatch({ type: 'SET_LOG', payload: next });
-try { localStorage.setItem(KEYS.log, JSON.stringify(next)); } catch { }
-dispatch({ type: 'SET_TOAST', payload: { msg: "✓ Eintrag wiederholt", show: true } });
 setTimeout(() => dispatch({ type: 'SET_TOAST', payload: { msg: "", show: false } }), 2000);
   }, [state.log]);
   const handleExport = useCallback(() => downloadTSV(state.items), [state.items]);
@@ -1625,11 +1449,6 @@ if (data) {
   if (merged.length) saveUserFamilyPrefs(merged);
 }
   }, [state.prefs, savePrefs, saveUserFamilyPrefs, pushError]);
-
-  // Fill-level warnings for low Flakons
-  const lowFillWarnings = useMemo(() =>
-state.items.filter(p => p.format === "Flakon" && state.fillLevels[p.id] !== undefined && state.fillLevels[p.id] <= 25)
-, [state.items, state.fillLevels]);
 
   const wishCount = state.wishlist.length;
   const declutterCount = useMemo(() => getDeclutterSuggestions(state.items, state.log).length, [state.items, state.log]);
