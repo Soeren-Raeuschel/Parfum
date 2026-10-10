@@ -50,7 +50,8 @@ export default function ParfumAddByLink({ items, onAdd, onClose, open }) {
   }
 
   return (
-    <Dialog open={open} onClose={onClose} className="relative z-[9100]">
+    <>
+      <Dialog open={open} onClose={onClose} className="relative z-[9100]">
       <div className="fixed inset-0 bg-black/45" aria-hidden="true" />
       <div className="fixed inset-0 overflow-y-auto flex items-start justify-center p-5 pt-[8vh]">
         <Dialog.Panel style={{ background: "#fff", borderRadius: 12, padding: 20, maxWidth: 420, width: "100%", boxShadow: "0 8px 32px rgba(0,0,0,.2)", maxHeight: "80vh", overflowY: "auto" }}>
@@ -152,11 +153,18 @@ export default function ParfumAddByLink({ items, onAdd, onClose, open }) {
         )}
       </div>
 
-      {/* Celebration-Card nach dem Bestätigen eines gescrapten Parfums.
-          key: stellt sicher, dass die Animation bei jedem Hinzufügen neu startet. */}
-      {celebrate && <EvolveCard key={celebrate.id} perfume={celebrate} onClose={() => setCelebrate(null)} />}
         </Dialog.Panel>
       </div>
     </Dialog>
+
+      {/* Celebration-Card nach dem Bestätigen eines gescrapten Parfums.
+          WICHTIG: außerhalb des <Dialog> rendern! Headless UI unmountet beim
+          Schließen (open=false) das komplette Panel inkl. aller Kinder –
+          steht die EvolveCard darin, verschwindet sie sofort wieder und die
+          Animation läuft nie an (das war der Bug, warum auf iOS/überall die
+          Celebration beim Hinzufügen „weg“ war).
+          key: stellt sicher, dass die Animation bei jedem Hinzufügen neu startet. */}
+      {celebrate && <EvolveCard key={celebrate.id} perfume={celebrate} onClose={() => setCelebrate(null)} />}
+    </>
   );
 }
