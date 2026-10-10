@@ -3,7 +3,7 @@ import { Combobox } from "@headlessui/react";
 import { S } from "../shared/ui";
 import { splitNotes } from "../utils/helpers";
 import { NOTE_TO_CAT, FAM_COLORS, primaryFamily } from "../shared/constants";
-import { LAYERING_COMPAT, getLayerCompat, analyzeNoteCompat, notesMatch, normNote } from "../shared/layering";
+import { getLayerCompat, analyzeNoteCompat, notesMatch, normNote } from "../shared/layering";
 
 
 function LayeringPerfumeSelect({ label, inputId, search, setSearch, filtered, selected, setSelected, items }) {

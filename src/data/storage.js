@@ -1,15 +1,16 @@
 /**
  * Speicherschicht: zentrale Persistenz-Schnittstelle.
  *
- * Alle Methoden geben Promises zurück, damit sie später durch einen
- * Supabase-Adapter (oder andere Backends) ersetzt werden können,
- * ohne die App-Komponente anpassen zu müssen.
+ * Alle Methoden geben Promises zurück. Aktiv ist der Hybrid-Adapter
+ * (cloudAdapter): schreibt sofort in localStorage und pusht Änderungen
+ * debounced nach Supabase (wenn konfiguriert und eingeloggt). Beim App-Start
+ * wird der Cloud-Stand über initCloudSync() gepullt (siehe App.jsx).
  *
- * Derzeit ist `localAdapter` (localStorage-basiert) aktiv.
  * `setPushError` muss nach dem Import mit der App-Fehlerfunktion aufgerufen werden.
  */
 
 import { localAdapter } from './localAdapter';
+import { cloudAdapter } from './cloudAdapter';
 
-export const storage = localAdapter;
-export { localAdapter };
+export const storage = cloudAdapter;
+export { localAdapter, cloudAdapter };

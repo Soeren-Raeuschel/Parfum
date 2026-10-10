@@ -10,7 +10,7 @@ import { Dialog } from "@headlessui/react";
 import { S, FamilyPill, Stars, useBodyLock } from "../shared/ui";
 import { triggerSprayAnimation } from "../shared/spray";
 
-import { CONC_COLORS, FAMILIES, FAM_COLORS, NOTE_CAT_COLORS, SEASONS, primaryFamily } from "../shared/constants";
+import { CONC_COLORS, FAMILIES, FAM_COLORS, NOTE_CAT_COLORS, SEASONS } from "../shared/constants";
 import { splitNotes } from "../utils/helpers";
 import { groqFetch } from "../utils/groqClient";
 import { lookupByUrl } from "../utils/parfumoLookup";
@@ -608,61 +608,6 @@ function getSpotifyOpenUrl(url) {
   return `https://open.spotify.com/${m[1]}/${m[2]}`;
 }
 
-function SpotifyCard({ spotifyUrl, onEdit }) {
-  const openUrl = getSpotifyOpenUrl(spotifyUrl);
-
-  if (openUrl) {
-    return (
-      <div style={{ marginBottom: 10 }}>
-        <a href={openUrl} target="_blank" rel="noopener noreferrer"
-          style={{
-            display: "inline-flex", alignItems: "center", gap: 7,
-            padding: "8px 14px", borderRadius: 10,
-            background: "#1DB954", color: "#fff", textDecoration: "none",
-            fontSize: 12, fontWeight: 500, transition: "all .3s cubic-bezier(0.25,.46,.45,.94)",
-            transform: "translateY(0)", boxShadow: "0 2px 8px rgba(29,185,84,0.3)"
-          }}
-          onMouseEnter={function (e) { e.currentTarget.style.setProperty('transform', 'translateY(-2px)'); e.currentTarget.style.setProperty('box-shadow', '0 4px 15px rgba(29,185,84,0.4)') }}
-          onMouseLeave={function (e) { e.currentTarget.style.setProperty('transform', 'translateY(0)'); e.currentTarget.style.setProperty('box-shadow', '0 2px 8px rgba(29,185,84,0.3)') }}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false">
-            <path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z" />
-          </svg>
-          Spotify
-        </a>
-        <button onClick={onEdit} aria-label="Spotify-URL bearbeiten"
-          style={{
-            background: "none", border: "none", cursor: "pointer", fontSize: 10, color: "#B4B2A9",
-            padding: "8px 0 0 2px", marginLeft: 4, transition: "color .12s"
-          }}
-          onMouseEnter={function (e) { e.currentTarget.style.setProperty('color', '#534AB7') }}
-          onMouseLeave={function (e) { e.currentTarget.style.setProperty('color', '#B4B2A9') }}>
-          ändern
-        </button>
-      </div>
-    );
-  }
-
-  return (
-    <div style={{ marginBottom: 10 }}>
-      <button onClick={onEdit} aria-label="Soundtrack hinzufügen"
-        style={{
-          display: "inline-flex", alignItems: "center", gap: 7,
-          padding: "8px 14px", borderRadius: 10,
-          border: "1px dashed #D3D1C7", background: "transparent",
-          color: "#B4B2A9", fontSize: 12, cursor: "pointer",
-          transition: "all .15s", fontFamily: "'Georgia',serif"
-        }}
-        onMouseEnter={function (e) { e.currentTarget.style.setProperty('border-color', '#1DB954'); e.currentTarget.style.setProperty('color', '#1DB954'); }}
-        onMouseLeave={function (e) { e.currentTarget.style.setProperty('border-color', '#D3D1C7'); e.currentTarget.style.setProperty('color', '#B4B2A9'); }}>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" opacity=".5" aria-hidden="true" focusable="false">
-          <path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z" />
-        </svg>
-        Soundtrack hinzufügen
-      </button>
-    </div>
-  );
-}
-
 function NotesEditModal({ perfume, onClose, onUpdate, onSaveNote, localNotes, onSearchNote, removeTag, addTag, noteInput, setNoteInput }) {
   useBodyLock(true);
   const [local, setLocal] = useState({ ...perfume });
@@ -739,7 +684,6 @@ function NotesEditModal({ perfume, onClose, onUpdate, onSaveNote, localNotes, on
             </div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
               {[...FAMILIES].filter(fam => !(local.families || []).includes(fam)).sort((a, b) => a.localeCompare(b)).map(fam => {
-                const col = FAM_COLORS[fam] || "#534AB7";
                 return (
                   <button key={fam} type="button" onClick={(e) => {
                     e.stopPropagation();
@@ -1604,7 +1548,6 @@ function SammlungTab({ items, log, notes, onDelete, onUpdate, onExport, onSaveNo
           <div className="lbl">NOTE WÄHLEN</div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
             {allNotes.slice(0, 60).map(n => {
-              const active = activeTerms.includes(n) || activeTerms.includes(normalizeTerm(n));
               return (
                 <button key={n} onClick={() => addNoteTerm(n)}
                   style={{ ...S.btn("out"), padding: "5px 9px", fontSize: 11, borderRadius: 16 }}>

@@ -1,6 +1,10 @@
 import security from "eslint-plugin-security";
 import globals from "globals";
 import js from "@eslint/js";
+// eslint-plugin-react: stellt u. a. jsx-uses-vars bereit – ohne diese Regel
+// zählt der ESLint-Kern JSX-Verwendung (<Dialog />) nicht als Variablen-Nutzung,
+// was zu ~100 Fehlalarmen in no-unused-vars geführt hat.
+import react from "eslint-plugin-react";
 
 export default [
   {
@@ -55,7 +59,10 @@ export default [
       "no-shadow-restricted-names": "error",
 
       // ── Stil-Bugs als Warnungen (blockieren Deploy nicht, aber auffällig) ──
-      "no-unused-vars": "error",
+      // args: "none" – unbenutzte Funktionsparameter (z. B. Props einer
+      // Komponente) sind Teil der Aufruf-API und werden nicht gemeldet;
+      // wirklich unbenutzte Variablen/Imports bleiben Fehler.
+      "no-unused-vars": ["error", { args: "none" }],
       "no-shadow": "warn",
       "prefer-const": "warn",
       "no-var": "error",
@@ -83,13 +90,20 @@ export default [
   // "Can't find variable: log"-Bug blieben dadurch unsichtbar.
   {
     files: ["src/**/*.jsx"],
+    plugins: { react },
     languageOptions: {
       parserOptions: { ecmaFeatures: { jsx: true } },
     },
+    settings: { react: { version: "detect" } },
     rules: {
-      // JSX-Verwendung (z. B. <Dialog />) wird vom ESLint-Kern ohne React-Plugin
-      // nicht als Variablen-Nutzung erkannt -> Fehlalarme. Deshalb hier nur Warnung.
-      "no-unused-vars": "warn"
+      // JSX-Verwendung (<Dialog />) jetzt als Variablen-Nutzung zählen:
+      "react/jsx-uses-vars": "error",
+      // Klassische (nicht neue) JSX-Runtime: React muss nicht importiert sein,
+      // aber JSX-Nutzung ohne React-Import darf kein Fehlalarm sein:
+      "react/jsx-uses-react": "error",
+      // no-unused-vars gilt jetzt unverfälscht (Fehler statt Warnung, wie in
+      // den JS-Dateien – JSX-Nutzung wird ja zuverlässig erkannt):
+      "no-unused-vars": "error",
     }
   }
 ];

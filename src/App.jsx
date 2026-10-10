@@ -1,12 +1,11 @@
 // Chart.js wird lazy geladen (siehe loadChart unten) → kleinerer Initial-Bundle
 import React, { useState, useEffect, useMemo, useCallback, useRef, useReducer, lazy, Suspense } from "react";
-import { Dialog, Tab } from "@headlessui/react";
+import { Tab } from "@headlessui/react";
 import { storage } from "./data/storage";
+import { initCloudSync } from "./utils/supabaseSync";
 import { sanitizePerfume, ONBOARD_STYLES } from "./data/localAdapter"; // Fix: sanitizePerfume/ONBOARD_STYLES wurden verwendet, aber nicht importiert (lokale Definitionen waren auskommentiert)
 import WhySuggestionDialog from "./components/WhySuggestionDialog";
 import { AiSparkle } from "./components/AiSparkle";
-import { splitNotes } from "./utils/helpers";
-import { normalizeText, tokenizeText } from "./utils/perfumeMatch"; // Fix: normalizeText/tokenizeText wurden verwendet, aber nicht importiert → "Can't find variable: normalizeText"
 
 import { getWearMap, recordWear, recordFeedback, feedbackContextKey, getPersonalBonusMap, getFeedbackCountsMap } from "./picker/wearStore";
 import { PICKER_CONFIG } from "./picker/pickerConfig";
@@ -21,7 +20,7 @@ import {
   KASSEL_COORDS,
 } from "./picker/todayIntegration";
 // ── Gemeinsame Module (aus App.jsx ausgelagert) ─────────────────────────────
-import { S, FamilyPill, MiniBar, Stars, useBodyLock, TabSkeleton } from "./shared/ui";
+import { S, FamilyPill, Stars, useBodyLock, TabSkeleton } from "./shared/ui";
 import { triggerSprayAnimation } from "./shared/spray";
 import {
   KEYS, SEASON_COLORS, FAM_COLORS,
@@ -66,10 +65,6 @@ const DetailView = lazy(() => import("./tabs/SammlungTab").then(m => ({ default:
 // Fix: Der AbortController wird erst beim Commit des debounced Werts neu erzeugt
 // (nicht pro Tastendruck). Damit ist das Signal zum Zeitpunkt des Sucheffekts
 // garantiert gültig und nicht bereits vom Cleanup des vorherigen Laufs abgebrochen.
-function safeParseJSON(raw, fallback) {
-  if (raw === null || raw === undefined || raw === "") return fallback;
-  try { return JSON.parse(raw); } catch { return fallback; }
-}
 function buildPromptContext(params) {
   const {
     occasion, mood, timeOfDay, weather, season,
@@ -752,7 +747,6 @@ Antworte NUR mit JSON: {"occasion":"...","mood":"...","timeOfDay":"...","intensi
     const isWild = role === "wildcard";
     const fc = FAM_COLORS[p.family] || "#888";
     const families = p.families && p.families.length > 0 ? p.families : (p.family ? [p.family] : []);
-    const familyDisplay = families.length > 0 ? families.join(", ") : "Sonstiges";
     const reason = buildSuggestionReason(
       p,
       recs && recs._selection ? recs._selection : buildPickerSelection({ season, weather, occasion, mood, timeOfDay, intensityPref, longevityPref, temperature }),
@@ -1195,85 +1189,6 @@ Antworte NUR mit JSON: {"occasion":"...","mood":"...","timeOfDay":"...","intensi
   );
 }
 
-// ── Note synonym map + search engine ─────────────────────────────────────────
-// Maps every known variant to a canonical German key.
-// Both the query AND the note values are normalized through this map,
-// so "Tobacco", "Tabac", "Tabacco" all match a search for "Tabak".
-const SYNONYMS = {
-  // Tabak
-  tobacco: "tabak", tabac: "tabak", tabacco: "tabak", tabak: "tabak",
-  // Vanille
-  vanilla: "vanille", vanillin: "vanille", vanille: "vanille",
-  // Moschus
-  musk: "moschus", musc: "moschus", muschus: "moschus", moschus: "moschus",
-  // Sandelholz
-  sandalwood: "sandelholz", santal: "sandelholz", sandal: "sandelholz", sandelholz: "sandelholz",
-  // Zedernholz
-  cedarwood: "zedernholz", cedar: "zedernholz", cèdre: "zedernholz", zeder: "zedernholz", zedernholz: "zedernholz",
-  // Ambra
-  amber: "ambra", ambre: "ambra", ambergris: "ambra", ambra: "ambra", ambroxan: "ambra",
-  // Oud
-  oudh: "oud", aoud: "oud", oud: "oud",
-  // Patschuli
-  patchouli: "patschuli", patchuly: "patschuli", patschuli: "patschuli",
-  // Bergamotte
-  bergamot: "bergamotte", bergamotto: "bergamotte", bergamotte: "bergamotte",
-  // Jasmin
-  jasmine: "jasmin", jasminum: "jasmin", jasmin: "jasmin",
-  // Rose
-  rose: "rose", rosa: "rose", rosen: "rose",
-  // Iris
-  orris: "iris", iris: "iris",
-  // Vetiver
-  vetiver: "vetiver", vétiver: "vetiver",
-  // Tonkabohne
-  tonka: "tonkabohne", "fève tonka": "tonkabohne", tonkabohne: "tonkabohne",
-  // Lavendel
-  lavender: "lavendel", lavande: "lavendel", lavendel: "lavendel",
-  // Zitrone
-  lemon: "zitrone", citron: "zitrone", limone: "zitrone", citrus: "zitrus", zitrone: "zitrone",
-  // Mandarine
-  mandarin: "mandarine", tangerine: "mandarine", mandarine: "mandarine",
-  // Kardamom
-  cardamom: "kardamom", cardamome: "kardamom", kardamom: "kardamom",
-  // Zimt
-  cinnamon: "zimt", cannelle: "zimt", zimt: "zimt",
-  // Ingwer
-  ginger: "ingwer", gingembre: "ingwer", ingwer: "ingwer",
-  // Neroli
-  neroli: "neroli", néroli: "neroli",
-  // Grapefruit
-  pampelmuse: "grapefruit", grapefruit: "grapefruit",
-  // Limette
-  lime: "limette", limette: "limette",
-  // Honig
-  honey: "honig", miel: "honig", honig: "honig",
-  // Leder
-  leather: "leder", cuir: "leder", leder: "leder",
-  // Eichenmoos
-  oakmoss: "eichenmoos", mousse: "eichenmoos", eichenmoos: "eichenmoos",
-  // Karamell
-  caramel: "karamell", karamell: "karamell",
-  // Pfeffer
-  pepper: "pfeffer", poivre: "pfeffer", pfeffer: "pfeffer",
-  // Zimt -> already done
-  // Zypresse
-  cypress: "zypresse", zypresse: "zypresse",
-  // Pflaume
-  plum: "pflaume", prune: "pflaume", pflaume: "pflaume",
-  // Kirsche
-  cherry: "kirsche", cerise: "kirsche", kirsche: "kirsche",
-  // Feige
-  fig: "feige", figue: "feige", feige: "feige",
-  // Kaffee
-  coffee: "kaffee", café: "kaffee", kaffee: "kaffee",
-};
-
-function normalizeTerm(raw) {
-  const t = normalizeText(raw);
-  return SYNONYMS[t] || t;
-}
-
 // ══════════════════════════════════════════════════════════════════════════════
 // FEATURE: COST PER WEAR
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1347,7 +1262,10 @@ backStack: [], detail: null, showOnboard: false,
   useEffect(() => {
 (async () => {
   try {
-    const data = await storage.loadAll();
+    // Wenn konfiguriert + eingeloggt: Cloud-Stand pullen & mergen,
+    // bevor die Daten geladen werden (sonst lokale Daten → danach Merge).
+    const merged = await initCloudSync();
+    const data = merged ?? await storage.loadAll();
     dispatch({ type: 'HYDRATE_ALL', payload: data });
   } catch (e) { pushError(e); }
   dispatch({ type: 'SET_LOADED', payload: true });
