@@ -51,7 +51,8 @@ export default function SupabaseMigrationModal({ open, onClose, items, wishlist,
     setBusy(true); setStatus(null);
     try {
       const res = await migrateCollectionToSupabase({ items, wishlist, notes, fillLevels, priceMl, log });
-      setStatus({ type: "ok", text: `✓ Migriert: ${res.perfumes} Parfüms, ${res.wearLog} Trage-Einträge, ${res.wishlist} Wunschliste-Einträge${res.settings ? ", Einstellungen" : ""}. Lokale Daten bleiben erhalten.` });
+      const skipped = res.skippedWearLog ? ` (${res.skippedWearLog} verwaiste Log-Einträge übersprungen)` : "";
+      setStatus({ type: "ok", text: `✓ Migriert: ${res.perfumes} Parfüms, ${res.wearLog} Trage-Einträge${skipped}, ${res.wishlist} Wunschliste-Einträge${res.settings ? ", Einstellungen" : ""}. Lokale Daten bleiben erhalten.` });
     } catch (err) {
       setStatus({ type: "err", text: "Migration fehlgeschlagen: " + (err.message || "Unbekannter Fehler") });
     } finally {

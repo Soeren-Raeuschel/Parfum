@@ -48,7 +48,6 @@ function toPerfumeRow(item, notes, fillLevels, priceMl, declutterStatus) {
   const families = Array.isArray(item.families) && item.families.length > 0
     ? item.families
     : [item.family].filter(Boolean);
-  const iso = ts => new Date(ts).toISOString();
   return {
     id,
     name: item.name ?? "",
@@ -64,14 +63,20 @@ function toPerfumeRow(item, notes, fillLevels, priceMl, declutterStatus) {
     format: item.format ?? "",
     url: item.url ?? "",
     spotify_url: item.spotify_url ?? "",
-    rating: typeof item.rating === "number" ? item.rating : 0,
+    rating: Math.min(5, Math.max(0, Math.round(typeof item.rating === "number" ? item.rating : 0))),
+    // CHECK rating BETWEEN 0 UND 5: Wert begrenzen, damit ungültige lokale
+    // Ratings (z. B. > 5) die Migration nicht abbrechen.
     note_categories: Array.isArray(item.note_categories) ? item.note_categories : [],
     // User-Notiz-Tags aus der lokalen notes-Map (parfum_notes_v1)
     notes: Array.isArray(notes?.[id]) ? notes[id] : [],
     fill_level: fillLevels?.[id] ?? null,
     price_ml: priceMl?.[id] ?? null,
     declutter_status: declutterStatus?.[id] ?? null,
-    added_at: item.addedAt ? iso(item.addedAt) : new Date().toISOString(),
+    // added_at: bei ungültigem/fehlendem Datum Fallback auf jetzt,
+    // sonst schlägt der Insert mit "Invalid Date" fehl.
+    added_at: item.addedAt && !Number.isNaN(new Date(item.addedAt).getTime())
+      ? new Date(item.addedAt).toISOString()
+      : new Date().toISOString(),
     updated_at: new Date().toISOString(),
   };
 }
@@ -107,8 +112,16 @@ export async function migrateCollectionToSupabase({
   const result = { perfumes: 0, wearLog: 0, wishlist: 0, settings: false };
 
   // 1) Parfüms (Replace: alte löschen, dann Bulk-Insert in Chunks)
-  const perfumeRows = (data.items ?? []).map(it =>
-    toPerfumeRow(it, data.notes, data.fillLevels, data.priceMl, data.declutterStatus));
+  // PK (user_id, id): doppelte lokale IDs entfernen (letzte Version gewinnt),
+  // sonst bricht der Bulk-Insert mit PK-Verletzung ab.
+  const seenPerfumeIds = new Set();
+  const perfumeRows = (data.items ?? [])
+    .map(it => toPerfumeRow(it, data.notes, data.fillLevels, data.priceMl, data.declutterStatus))
+    .filter(row => {
+      if (seenPerfumeIds.has(row.id)) return false;
+      seenPerfumeIds.add(row.id);
+      return true;
+    });
   { const { error } = await supabase.from("perfumes").delete().eq("user_id", uid);
     if (error) throw new Error("perfumes (delete): " + error.message); }
   for (let i = 0; i < perfumeRows.length; i += 200) {
@@ -118,9 +131,16 @@ export async function migrateCollectionToSupabase({
   result.perfumes = perfumeRows.length;
 
   // 2) Trage-Log (Replace)
-  const logRows = (data.log ?? [])
-    .filter(l => l && typeof l.ts === "number" && l.id)
+  // FK wear_log_user_id_perfume_id_fkey: nur Einträge übernehmen, deren
+  // perfume_id wirklich in der Sammlung existiert (z. B. gelöschte Parfüms
+  // hinterlassen sonst verwaiste Log-Einträge → Foreign-Key-Fehler).
+  const knownIds = new Set((data.items ?? []).map(it => String(it.id)));
+  const allLogRows = (data.log ?? [])
+    .filter(l => l && typeof l.ts === "number" && l.id);
+  const logRows = allLogRows
+    .filter(l => knownIds.has(String(l.id)))
     .map(l => ({ perfume_id: l.id, worn_at: new Date(l.ts).toISOString() }));
+  result.skippedWearLog = allLogRows.length - logRows.length;
   { const { error } = await supabase.from("wear_log").delete().eq("user_id", uid);
     if (error) throw new Error("wear_log (delete): " + error.message); }
   for (let i = 0; i < logRows.length; i += 500) {
