@@ -25,24 +25,41 @@ jobs:
       - name: Supabase CLI installieren
         run: npx --yes supabase@latest --version
 
-      - name: Dump erstellen (Schema + Daten)
+      - name: Dump erstellen (Rollen + Schema + Daten, getrennt)
         env:
           # Projekt-Ref fest verdrahtet; Passwort ausschließlich aus Secret
           SUPABASE_DB_URL: "postgresql://postgres:${{ secrets.SUPABASE_DB_PASSWORD }}@db.fnebocricgzjwmzalozr.supabase.co:5432/postgres"
         run: |
           STAMP="$(date -u +%Y%m%d-%H%M%S)"
+          PREFIX="parfum-backup-${STAMP}"
+          # Offiziell empfohlenes Drei-Wege-Dump (Supabase-Doku):
+          # 1) Rollen (Berechtigungen), 2) Schema, 3) Daten
           npx supabase@latest db dump \
             --db-url "$SUPABASE_DB_URL" \
-            --file "parfum-backup-${STAMP}.sql" \
+            --file "${PREFIX}-roles.sql" \
+            --role-only
+          npx supabase@latest db dump \
+            --db-url "$SUPABASE_DB_URL" \
+            --file "${PREFIX}-schema.sql"
+          npx supabase@latest db dump \
+            --db-url "$SUPABASE_DB_URL" \
+            --file "${PREFIX}-data.sql" \
+            --data-only \
             --use-copy
-          # Dump gzip-komprimieren (SQL-Dumps sind stark komprimierbar)
-          gzip "parfum-backup-${STAMP}.sql"
-          echo "BACKUP_FILE=parfum-backup-${STAMP}.sql.gz" >> "$GITHUB_ENV"
+          # Alle Dumps gzip-komprimieren (SQL-Dumps sind stark komprimierbar)
+          gzip "${PREFIX}-roles.sql" "${PREFIX}-schema.sql" "${PREFIX}-data.sql"
+          tar -czf "${PREFIX}.tar.gz" "${PREFIX}-roles.sql.gz" "${PREFIX}-schema.sql.gz" "${PREFIX}-data.sql.gz"
+          echo "BACKUP_FILE=${PREFIX}.tar.gz" >> "$GITHUB_ENV"
 
       - name: Dump-Integrität prüfen
         run: |
           test -s "$BACKUP_FILE" || { echo "::error::Backup-Datei fehlt oder ist leer"; exit 1; }
-          gzip -t "$BACKUP_FILE" || { echo "::error::Gzip-Integritätsprüfung fehlgeschlagen"; exit 1; }
+          tar -tzf "$BACKUP_FILE" > /dev/null || { echo "::error::Tar/Gzip-Integritätsprüfung fehlgeschlagen"; exit 1; }
+          # Prüfen, dass der Daten-Dump nicht leer ist (mindestens 1 Datenzeile)
+          tar -xzf "$BACKUP_FILE" -O "$(basename "${BACKUP_FILE%.tar.gz}")-data.sql.gz" | gzip -dc | head -50 > /tmp/data-head.txt
+          if ! grep -q "COPY\|INSERT" /tmp/data-head.txt; then
+            echo "::warning::Daten-Dump enthält keine COPY/INSERT-Anweisungen (leere Sammlung?)"
+          fi
           echo "Backup OK: $BACKUP_FILE ($(du -h "$BACKUP_FILE" | cut -f1))"
 
       - name: Backup als Artifact hochladen
