@@ -27,8 +27,11 @@ jobs:
 
       - name: Dump erstellen (Rollen + Schema + Daten, getrennt)
         env:
-          # Projekt-Ref fest verdrahtet; Passwort ausschließlich aus Secret
-          SUPABASE_DB_URL: "postgresql://postgres:${{ secrets.SUPABASE_DB_PASSWORD }}@db.fnebocricgzjwmzalozr.supabase.co:5432/postgres"
+          # Transaction Pooler (Port 6543): GitHub-Runner haben kein IPv6, die
+          # direkte IPv6-DB-Adresse (db.*.supabase.co:5432) wäre unreachable.
+          # Pooler ist IPv4-fähig; pgbouncer=true nötig für Prepared Statements.
+          # Passwort ausschließlich aus Secret.
+          SUPABASE_DB_URL: "postgresql://postgres.fnebocricgzjwmzalozr:${{ secrets.SUPABASE_DB_PASSWORD }}@aws-0-eu-central-1.pooler.supabase.com:6543/postgres?pgbouncer=true"
         run: |
           STAMP="$(date -u +%Y%m%d-%H%M%S)"
           PREFIX="parfum-backup-${STAMP}"
