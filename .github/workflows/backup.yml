@@ -1,0 +1,54 @@
+# Wöchentliches Datenbank-Backup des Supabase-Projekts.
+#
+# Erstellt einen SQL-Dump (Schema + Daten + Rollen) und lädt ihn als
+# Workflow-Artifact hoch (Retention 90 Tage). Zusätzlich wird geprüft,
+# dass der Dump nicht leer/korrupt ist.
+#
+# Erforderliche Secrets im GitHub-Repo (Settings → Secrets and variables → Actions):
+#   SUPABASE_DB_PASSWORD – Datenbank-Passwort des Projekts
+#     (Supabase Dashboard → Settings → Database → Database password)
+#
+# Manueller Start jederzeit über "Run workflow" (workflow_dispatch).
+
+name: Supabase Backup
+
+on:
+  schedule:
+    # Jeden Sonntag 03:30 UTC (= 05:30 Sommerzeit / 04:30 Winterzeit MEZ)
+    - cron: '30 3 * * 0'
+  workflow_dispatch:
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Supabase CLI installieren
+        run: npx --yes supabase@latest --version
+
+      - name: Dump erstellen (Schema + Daten)
+        env:
+          # Projekt-Ref fest verdrahtet; Passwort ausschließlich aus Secret
+          SUPABASE_DB_URL: "postgresql://postgres:${{ secrets.SUPABASE_DB_PASSWORD }}@db.fnebocricgzjwmzalozr.supabase.co:5432/postgres"
+        run: |
+          STAMP="$(date -u +%Y%m%d-%H%M%S)"
+          npx supabase@latest db dump \
+            --db-url "$SUPABASE_DB_URL" \
+            --file "parfum-backup-${STAMP}.sql" \
+            --use-copy
+          # Dump gzip-komprimieren (SQL-Dumps sind stark komprimierbar)
+          gzip "parfum-backup-${STAMP}.sql"
+          echo "BACKUP_FILE=parfum-backup-${STAMP}.sql.gz" >> "$GITHUB_ENV"
+
+      - name: Dump-Integrität prüfen
+        run: |
+          test -s "$BACKUP_FILE" || { echo "::error::Backup-Datei fehlt oder ist leer"; exit 1; }
+          gzip -t "$BACKUP_FILE" || { echo "::error::Gzip-Integritätsprüfung fehlgeschlagen"; exit 1; }
+          echo "Backup OK: $BACKUP_FILE ($(du -h "$BACKUP_FILE" | cut -f1))"
+
+      - name: Backup als Artifact hochladen
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.BACKUP_FILE }}
+          path: ${{ env.BACKUP_FILE }}
+          retention-days: 90
+          if-no-files-found: error

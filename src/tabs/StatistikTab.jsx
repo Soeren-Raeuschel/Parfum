@@ -1,7 +1,8 @@
-import React, { useState, useMemo, lazy, Suspense } from "react";
+import React, { useState, useEffect, useMemo, lazy, Suspense } from "react";
 import { S, MiniBar, FamilyPill, Stars } from "../shared/ui";
 import { FAM_COLORS, getSeasonColor } from "../shared/constants";
 import { splitNotes } from "../utils/helpers";
+import { fetchWearStatsMonthly } from "../utils/supabaseSync";
 
 // Duft-DNA (inkl. Chart.js) als eigener Lazy-Chunk
 const DuftDNASection = lazy(() => import("../components/DuftDNASection"));
@@ -201,6 +202,7 @@ function WearCalendar({ log, items, onSelectPerfume }) {
 }
 
 // ── Statistik tab (expanded) ──────────────────────────────────────────────────
+
 function StatistikTab({ items, log, onSelectPerfume }) {
   const [drill, setDrill] = useState(null);
   const [statsTab, setStatsTab] = useState("profil");
@@ -248,20 +250,39 @@ function StatistikTab({ items, log, onSelectPerfume }) {
       .sort((a, b) => parseFloat(b[1]) - parseFloat(a[1])); // toFixed liefert Strings → parseFloat für numerische Sortierung
   }, [items]);
 
+  // Cloud-Statistik (Supabase-View wear_stats_monthly) laden, sobald Log-Daten
+  // vorliegen. Fehlschlag/nicht konfiguriert → null → lokale Fallback-Berechnung.
+  const [cloudMonthly, setCloudMonthly] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    fetchWearStatsMonthly()
+      .then(rows => { if (alive) setCloudMonthly(rows); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [log.length]);
+
   const monthlyWear = useMemo(() => {
+    // Zähler pro Monat (Schlüssel "YYYY-MM"): Cloud-View bevorzugt, sonst lokal
     const c = {};
-    log.forEach(l => {
-      // Chronologisch sortierbarer Schlüssel (YYYY-MM), Anzeige-Label erst danach
-      const d = new Date(l.ts);
-      const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-      c[k] = (c[k] || 0) + 1;
-    });
+    if (cloudMonthly) {
+      cloudMonthly.forEach(r => {
+        const k = String(r.month).slice(0, 7); // "YYYY-MM-DD" → "YYYY-MM"
+        c[k] = (c[k] || 0) + (r.wear_count || 0);
+      });
+    } else {
+      log.forEach(l => {
+        // Chronologisch sortierbarer Schlüssel (YYYY-MM), Anzeige-Label erst danach
+        const d = new Date(l.ts);
+        const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+        c[k] = (c[k] || 0) + 1;
+      });
+    }
     return Object.keys(c).sort().slice(-12)
       .map(k => {
         const [y, m] = k.split("-").map(Number);
         return [new Date(y, m - 1).toLocaleDateString("de-DE", { month: "short", year: "2-digit" }), c[k]];
       });
-  }, [log]);
+  }, [cloudMonthly, log]);
 
   const wearByFam = useMemo(() => {
     const c = {};

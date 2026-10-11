@@ -2,6 +2,18 @@
 -- Status: rein dokumentarisch – das eigentliche Schema (perfumes, wear_log,
 -- wishlist, user_settings) existiert bereits im Supabase-Projekt inkl. RLS.
 -- Es sind keine manuellen DDL-Schritte mehr nötig.
+
+-- Ergänzungen (via Supabase-Migrationen angewendet):
+-- Migration "set_updated_at_triggers":
+--   set_updated_at() – SECURITY INVOKER Trigger-Funktion, EXECUTE für
+--   anon/authenticated entzogen. BEFORE-UPDATE-Trigger auf perfumes
+--   (perfumes_set_updated_at) und user_settings (user_settings_set_updated_at)
+--   setzen updated_at automatisch auf now().
+-- Migration "wear_stats_monthly_view":
+--   View wear_stats_monthly – pro User, Monat (date_trunc) und Parfum:
+--   wear_count, name, house, rating. security_invoker = true, sodass die
+--   RLS-Policies von wear_log/perfumes greifen (nur eigene Zeilen sichtbar).
+--   Vom Frontend gelesen über fetchWearStatsMonthly() in src/utils/supabaseSync.js.
 --
 -- Migration-Button (Sammlung → "☁ Migrieren") schreibt in:
 --   perfumes       : Sammlung + notes (Tags), fill_level, price_ml, declutter_status

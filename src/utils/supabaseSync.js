@@ -601,6 +601,30 @@ export async function pullAndMergeCloud() {
  * pullen + mergen. Fehler werden still abgefangen (App läuft offline normal
  * weiter). Liefert die gemergten Daten oder null.
  */
+/**
+ * Liest die aggregierte Trage-Statistik aus der View wear_stats_monthly:
+ * pro Monat und Parfum { month: "YYYY-MM-DD", perfume_id, name, house,
+ * rating, wear_count }. RLS greift via security_invoker weiter (nur eigene
+ * Zeilen). Gibt null zurück, wenn Supabase nicht konfiguriert/nicht
+ * eingeloggt ist oder der Abruf fehlschlägt.
+ */
+export async function fetchWearStatsMonthly() {
+  if (!isSupabaseConfigured) return null;
+  try {
+    const supabase = getSupabase();
+    const { data: userData, error: userErr } = await supabase.auth.getUser();
+    if (userErr || !userData?.user) return null;
+    const { data, error } = await supabase
+      .from("wear_stats_monthly")
+      .select("month,perfume_id,name,house,rating,wear_count")
+      .order("month", { ascending: true });
+    if (error) return null;
+    return data ?? [];
+  } catch {
+    return null;
+  }
+}
+
 export async function initCloudSync() {
   if (!isSupabaseConfigured) return null;
   try {
