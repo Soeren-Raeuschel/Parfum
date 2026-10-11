@@ -31,7 +31,7 @@ jobs:
           # direkte IPv6-DB-Adresse (db.*.supabase.co:5432) wäre unreachable.
           # Pooler ist IPv4-fähig; pgbouncer=true nötig für Prepared Statements.
           # Passwort ausschließlich aus Secret.
-          SUPABASE_DB_URL: "postgresql://postgres.fnebocricgzjwmzalozr:${{ secrets.SUPABASE_DB_PASSWORD }}@aws-0-eu-central-1.pooler.supabase.com:6543/postgres?pgbouncer=true"
+          SUPABASE_DB_URL: "postgresql://postgres.fnebocricgzjwmzalozr:${{ secrets.SUPABASE_DB_PASSWORD }}@aws-1-eu-central-1.pooler.supabase.com:6543/postgres?pgbouncer=true"
         run: |
           STAMP="$(date -u +%Y%m%d-%H%M%S)"
           PREFIX="parfum-backup-${STAMP}"
